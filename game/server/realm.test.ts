@@ -1,8 +1,57 @@
 import { describe, expect, it } from "vitest";
 import { manhattanDistance } from "../shared/grid";
-import type { ServerMessage } from "../shared/types";
+import type { GridPosition, ServerMessage } from "../shared/types";
 import { STARTER_MAP, STARTER_MONSTERS } from "../shared/world";
-import { InMemoryRealm } from "./realm";
+import {
+  InMemoryRealm,
+  PLAYER_COMBAT_TIMEOUT_MS,
+  PLAYER_HEALTH_REGEN_PER_SECOND,
+} from "./realm";
+
+interface RuntimePlayerForTest {
+  id: string;
+  level: number;
+  hp: number;
+  alive: boolean;
+  position: GridPosition;
+}
+
+interface RuntimeMonsterForTest {
+  definition: { spawn: GridPosition };
+  position: GridPosition;
+  path: GridPosition[];
+  targetId: string | null;
+  provokedById: string | null;
+  nextAttackAt: number;
+  nextWanderAt: number;
+}
+
+function runtimeState(realm: InMemoryRealm): {
+  player: RuntimePlayerForTest;
+  slime: RuntimeMonsterForTest;
+} {
+  const internal = realm as unknown as {
+    players: Map<string, RuntimePlayerForTest>;
+    monsters: Map<string, RuntimeMonsterForTest>;
+  };
+  const player = internal.players.values().next().value;
+  const slime = internal.monsters.get("slime-01");
+  if (!player || !slime) throw new Error("Expected joined player and starter slime");
+  return { player, slime };
+}
+
+function provokeSlimeBesidePlayer(realm: InMemoryRealm): {
+  player: RuntimePlayerForTest;
+  slime: RuntimeMonsterForTest;
+} {
+  const state = runtimeState(realm);
+  state.slime.position = { x: state.player.position.x + 1, y: state.player.position.y };
+  state.slime.path = [];
+  state.slime.targetId = null;
+  state.slime.provokedById = state.player.id;
+  state.slime.nextAttackAt = 0;
+  return state;
+}
 
 describe("authoritative in-memory realm", () => {
   it("accepts a joined player's valid grid movement", () => {
@@ -110,6 +159,121 @@ describe("authoritative in-memory realm", () => {
     if (retaliation?.type === "event" && retaliation.event.type === "damage") {
       expect(retaliation.event.amount).toBeGreaterThan(0);
     }
+  });
+
+  it("regenerates two HP per complete second after five seconds without combat", () => {
+    let now = 0;
+    const realm = new InMemoryRealm({ now: () => now, random: () => 1, autoStart: false });
+    realm.registerPeer("peer-1", () => undefined);
+    realm.joinPeer("peer-1", { type: "join", name: "Testeur" });
+    const { player, slime } = provokeSlimeBesidePlayer(realm);
+    player.hp = 80;
+
+    now = 100;
+    realm.step(now);
+    const damaged = realm.snapshot().players[0];
+    expect(damaged.hp).toBeLessThan(damaged.maxHp);
+    const hpAfterCombat = damaged.hp;
+
+    // End the provoked chase without creating another combat action.
+    slime.position = { ...slime.definition.spawn };
+    slime.path = [];
+    slime.targetId = null;
+    slime.provokedById = null;
+    slime.nextWanderAt = Number.MAX_SAFE_INTEGER;
+
+    now = 100 + PLAYER_COMBAT_TIMEOUT_MS;
+    realm.step(now);
+    expect(realm.snapshot().players[0].hp).toBe(hpAfterCombat);
+
+    now += 999;
+    realm.step(now);
+    expect(realm.snapshot().players[0].hp).toBe(hpAfterCombat);
+
+    now += 1;
+    realm.step(now);
+    expect(realm.snapshot().players[0].hp).toBe(
+      hpAfterCombat + PLAYER_HEALTH_REGEN_PER_SECOND,
+    );
+
+    // A delayed tick resolves the three additional full seconds exactly once.
+    now += 3_000;
+    realm.step(now);
+    expect(realm.snapshot().players[0].hp).toBe(
+      hpAfterCombat + PLAYER_HEALTH_REGEN_PER_SECOND * 4,
+    );
+
+    now += 100_000;
+    realm.step(now);
+    const healed = realm.snapshot().players[0];
+    expect(healed.hp).toBe(healed.maxHp);
+  });
+
+  it("never regenerates a dead player", () => {
+    let now = 0;
+    const realm = new InMemoryRealm({ now: () => now, autoStart: false });
+    realm.registerPeer("peer-1", () => undefined);
+    realm.joinPeer("peer-1", { type: "join", name: "Testeur" });
+    const { player } = provokeSlimeBesidePlayer(realm);
+    player.hp = 1;
+
+    now = 100;
+    realm.step(now);
+    expect(realm.snapshot().players[0]).toMatchObject({ alive: false, hp: 0 });
+
+    now += PLAYER_COMBAT_TIMEOUT_MS + 60_000;
+    realm.step(now);
+    expect(realm.snapshot().players[0]).toMatchObject({ alive: false, hp: 0 });
+  });
+
+  it("awards offensive and defensive mastery XP against monsters far below the player", () => {
+    let now = 0;
+    const realm = new InMemoryRealm({ now: () => now, random: () => 1, autoStart: false });
+    realm.registerPeer("peer-1", () => undefined);
+    realm.joinPeer("peer-1", { type: "join", name: "Testeur" });
+    const runtime = runtimeState(realm);
+    runtime.player.level = 50;
+
+    // A level-1 slime is outside the former level filter for a level-50 player.
+    realm.handleMessage("peer-1", { type: "target", targetId: "slime-01", sequence: 0 });
+    for (let step = 0; step < 120; step += 1) {
+      now += 250;
+      realm.step(now);
+      if (realm.snapshot().players[0].masteries.melee.xp > 0) break;
+    }
+    expect(realm.snapshot().players[0].masteries.melee.xp).toBe(5);
+
+    // The one-shot slime never retaliates, so this also proves that giving an
+    // attack by itself restarts the same five-second combat window.
+    const hpAfterPlayerAttack = realm.snapshot().players[0].hp;
+    now += PLAYER_COMBAT_TIMEOUT_MS;
+    realm.step(now);
+    expect(realm.snapshot().players[0].hp).toBe(hpAfterPlayerAttack);
+    now += 1_000;
+    realm.step(now);
+    expect(realm.snapshot().players[0].hp).toBe(
+      hpAfterPlayerAttack + PLAYER_HEALTH_REGEN_PER_SECOND,
+    );
+
+    // Use the second slime to verify received hits train defense under the
+    // same no-level-filter rule.
+    const internal = realm as unknown as {
+      monsters: Map<string, RuntimeMonsterForTest>;
+    };
+    const secondSlime = internal.monsters.get("slime-02");
+    if (!secondSlime) throw new Error("Expected second starter slime");
+    secondSlime.position = {
+      x: runtime.player.position.x + 1,
+      y: runtime.player.position.y,
+    };
+    secondSlime.path = [];
+    secondSlime.targetId = null;
+    secondSlime.provokedById = runtime.player.id;
+    secondSlime.nextAttackAt = 0;
+
+    now += 100;
+    realm.step(now);
+    expect(realm.snapshot().players[0].masteries.defense.xp).toBe(3);
   });
 
   it("makes idle monsters patrol deterministically inside their spawn area", () => {
@@ -451,5 +615,40 @@ describe("authoritative in-memory realm", () => {
     expect(
       messages.some((message) => message.type === "error" && message.code === "STALE_SEQUENCE"),
     ).toBe(true);
+  });
+
+  it("accepts sequence zero again when a refreshed client resumes its player", () => {
+    const firstMessages: ServerMessage[] = [];
+    const realm = new InMemoryRealm({ autoStart: false });
+    realm.registerPeer("peer-1", (message) => firstMessages.push(message));
+    realm.joinPeer("peer-1", { type: "join", name: "Testeur" });
+    const firstWelcome = firstMessages.find((message) => message.type === "welcome");
+    if (!firstWelcome || firstWelcome.type !== "welcome") throw new Error("Welcome expected");
+
+    realm.handleMessage("peer-1", {
+      type: "move",
+      destination: { x: STARTER_MAP.playerSpawn.x, y: STARTER_MAP.playerSpawn.y + 1 },
+      sequence: 12,
+    });
+    realm.disconnectPeer("peer-1");
+
+    const refreshedMessages: ServerMessage[] = [];
+    realm.registerPeer("peer-2", (message) => refreshedMessages.push(message));
+    realm.joinPeer("peer-2", {
+      type: "join",
+      name: "Testeur",
+      resumeToken: firstWelcome.resumeToken,
+    });
+    realm.handleMessage("peer-2", {
+      type: "move",
+      destination: { x: STARTER_MAP.playerSpawn.x + 1, y: STARTER_MAP.playerSpawn.y },
+      sequence: 0,
+    });
+
+    expect(
+      refreshedMessages.some(
+        (message) => message.type === "error" && message.code === "STALE_SEQUENCE",
+      ),
+    ).toBe(false);
   });
 });

@@ -2,11 +2,18 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { prepareOfflineCache } from "@/game/client/offlineCache";
+
 import Hud, {
   type HudConnectionStatus,
+  type HudConnectionMode,
   type HudEquipmentSlot,
   type HudInventoryItem,
+  type HudMapPosition,
+  type HudMapSize,
   type HudReward,
+  type HudRift,
+  type HudRiftCompletion,
   type HudStatBreakdown,
 } from "./Hud";
 
@@ -27,6 +34,11 @@ interface GameHudState {
   stats: HudStatBreakdown[];
   rewards: HudReward[];
   alive: boolean;
+  rifts: HudRift[];
+  playerMapPosition: HudMapPosition;
+  mapSize: HudMapSize;
+  preferredConnectionMode: HudConnectionMode;
+  riftCompletion: HudRiftCompletion | null;
 }
 
 export type GameHudUpdate = Partial<GameHudState>;
@@ -154,6 +166,11 @@ export default function GameShell() {
     stats: initialStats,
     rewards: [] as HudReward[],
     alive: true,
+    rifts: [],
+    playerMapPosition: { x: 17, y: 27 },
+    mapSize: { width: 64, height: 48 },
+    preferredConnectionMode: "online",
+    riftCompletion: null,
   });
 
   useEffect(() => {
@@ -168,6 +185,7 @@ export default function GameShell() {
         onReady: () => setReady(true),
         onHud: (update) => setHud((current) => ({ ...current, ...update })),
       });
+      if (process.env.NODE_ENV === "production") void prepareOfflineCache();
     }
 
     void start();
@@ -202,6 +220,11 @@ export default function GameShell() {
         onUnequip={(slotId) => dispatchToGame("ui:unequip", { slotId })}
         onSkillActivate={(skillId) => dispatchToGame("ui:skill", { skillId })}
         onRespawn={() => dispatchToGame("ui:respawn", {})}
+        onConnectionModeChange={(mode) => {
+          setHud((current) => ({ ...current, preferredConnectionMode: mode }));
+          dispatchToGame("ui:connection-mode", { mode });
+        }}
+        onDismissRiftCompletion={() => setHud((current) => ({ ...current, riftCompletion: null }))}
       />
     </main>
   );

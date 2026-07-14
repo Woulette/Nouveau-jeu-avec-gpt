@@ -5,6 +5,8 @@ import type {
   HudEquipmentSlot,
   HudInventoryItem,
   HudReward,
+  HudRift,
+  HudRiftCompletion,
   HudStatBreakdown,
 } from "@/components/Hud";
 import { positionKey } from "@/game/shared/grid";
@@ -27,11 +29,14 @@ import type {
   PlayerSnapshot,
   PublicMapDefinition,
   RealmSnapshot,
+  RiftSnapshot,
 } from "@/game/shared/types";
+import { RIFT_MAP, RIFT_ROOM_GATES } from "@/game/shared/rifts";
 import { STARTER_LANDMARKS, STARTER_MAP } from "@/game/shared/world";
 
 import { createProceduralAssets } from "./AssetFactory";
 import { WorldSocket } from "./WorldSocket";
+import { loadPreferredConnectionMode, savePlayerSnapshot } from "./storage";
 import {
   VISUAL_ANIMATIONS,
   VISUAL_KEYS,
@@ -60,6 +65,12 @@ interface EntityView {
   maxHp: number;
   isBoss: boolean;
   healthY: number;
+}
+
+interface RiftView {
+  container: Phaser.GameObjects.Container;
+  label: Phaser.GameObjects.Text;
+  sprite: Phaser.GameObjects.Sprite;
 }
 
 const EQUIPMENT_LABELS: Readonly<Record<EquipmentSlot, string>> = {
@@ -158,6 +169,15 @@ export class WorldScene extends Phaser.Scene {
   private rewardSequence = 0;
   private toastTween: Phaser.Tweens.Tween | null = null;
   private readySent = false;
+  private worldLayer: Phaser.GameObjects.Layer | null = null;
+  private riftLayer: Phaser.GameObjects.Layer | null = null;
+  private zoneKind: "world" | "rift" = "world";
+  private currentZoneId = STARTER_MAP.id;
+  private riftViews = new Map<string, RiftView>();
+  private latestRifts = new Map<string, RiftSnapshot>();
+  private lastWorldPosition: GridPosition = { ...STARTER_MAP.playerSpawn };
+  private latestLocalPlayer: PlayerSnapshot | null = null;
+  private lastSaveAt = 0;
 
   private readonly equipListener = (event: Event) => {
     const itemId = (event as CustomEvent<{ itemId?: string }>).detail?.itemId;
@@ -175,6 +195,23 @@ export class WorldScene extends Phaser.Scene {
     this.socket?.respawn();
   };
 
+  private readonly connectionModeListener = (event: Event) => {
+    const mode = (event as CustomEvent<{ mode?: "online" | "offline" }>).detail?.mode;
+    if (mode === "online" || mode === "offline") {
+      this.socket?.setConnectionMode(mode);
+      this.showToast(
+        mode === "offline" ? "Passage en mode hors ligne…" : "Connexion au monde en ligne…",
+        0x76c9f4,
+      );
+    }
+  };
+
+  private readonly pageHideListener = () => {
+    if (this.latestLocalPlayer && this.zoneKind === "world") {
+      savePlayerSnapshot(this.latestLocalPlayer);
+    }
+  };
+
   constructor(callbacks: WorldCallbacks) {
     super({ key: "ValDAube" });
     this.callbacks = callbacks;
@@ -183,7 +220,12 @@ export class WorldScene extends Phaser.Scene {
   create() {
     createProceduralAssets(this);
 
-    this.createWorld();
+    this.worldLayer = this.captureWorldLayer(() => this.createWorld());
+    this.riftLayer = this.captureWorldLayer(() => this.createRiftWorld()).setVisible(false);
+    this.destinationMarker = this.add
+      .sprite(0, 0, VISUAL_KEYS.effects.destination)
+      .setVisible(false)
+      .setDepth(9_000);
     this.createScreenText();
     this.configureCamera();
     this.configureInput();
@@ -191,19 +233,32 @@ export class WorldScene extends Phaser.Scene {
     window.addEventListener("ui:equip", this.equipListener);
     window.addEventListener("ui:unequip", this.unequipListener);
     window.addEventListener("ui:respawn", this.respawnListener);
+    window.addEventListener("ui:connection-mode", this.connectionModeListener);
+    window.addEventListener("pagehide", this.pageHideListener);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.shutdownWorld());
 
     const playerName = this.getPlayerName();
+    const preferredConnectionMode = loadPreferredConnectionMode();
+    this.callbacks.onHud({ preferredConnectionMode });
     this.socket = new WorldSocket(
       { name: playerName },
       {
         onStatus: (status) => {
           this.callbacks.onHud({
             connectionStatus:
-              status === "online" ? "connected" : status === "local" ? "local" : "connecting",
+              status === "online"
+                ? "connected"
+                : status === "local"
+                  ? "local"
+                  : status === "offline"
+                    ? "offline"
+                    : "connecting",
           });
           if (status === "local") {
             this.showToast("Mode local actif · la partie reste jouable", 0x76c9f4);
+          }
+          if (status === "offline") {
+            this.showToast("Mode hors ligne actif · progression sauvegardée sur cet appareil", 0x76c9f4);
           }
         },
         onWelcome: ({ playerId, map, snapshot }) => {
@@ -261,13 +316,7 @@ export class WorldScene extends Phaser.Scene {
     this.createBridge();
     this.createBuildings();
     this.createProps();
-    this.createPortal();
     this.createNpc();
-
-    this.destinationMarker = this.add
-      .sprite(0, 0, VISUAL_KEYS.effects.destination)
-      .setVisible(false)
-      .setDepth(9_000);
 
     this.add
       .text(32 * TILE + 18, 25.5 * TILE, "Prairies de l’Est  →", {
@@ -279,6 +328,65 @@ export class WorldScene extends Phaser.Scene {
       })
       .setOrigin(0, 0.5)
       .setDepth(4_000);
+  }
+
+  private captureWorldLayer(builder: () => void): Phaser.GameObjects.Layer {
+    const before = new Set(this.children.list);
+    builder();
+    const created = this.children.list.filter((child) => !before.has(child));
+    const layer = this.add.layer();
+    layer.add(created);
+    return layer;
+  }
+
+  private createRiftWorld() {
+    const width = RIFT_MAP.width * TILE;
+    const height = RIFT_MAP.height * TILE;
+    this.add
+      .tileSprite(width / 2, height / 2, width, height, VISUAL_KEYS.terrain.riftGround)
+      .setDepth(0)
+      .setTint(0x77658f);
+    this.paintRect(1, 1, RIFT_MAP.width - 2, RIFT_MAP.height - 2, VISUAL_KEYS.terrain.dirt, 1, 0.72);
+    this.paintRect(2, 7, RIFT_MAP.width - 4, 5, VISUAL_KEYS.terrain.path, 2, 0.68);
+
+    const walls = this.add.graphics().setDepth(3);
+    walls.fillStyle(0x171321, 1);
+    walls.lineStyle(1, 0x76579b, 0.75);
+    for (const key of RIFT_MAP.blocked) {
+      const [x, y] = key.split(",").map(Number);
+      walls.fillRect(x * TILE, y * TILE, TILE, TILE);
+      walls.strokeRect(x * TILE + 1, y * TILE + 1, TILE - 2, TILE - 2);
+    }
+
+    for (const [index, gateX] of RIFT_ROOM_GATES.entries()) {
+      const gate = this.add.graphics().setDepth(4);
+      gate.fillStyle(0x7b4bac, 0.3).fillRect(gateX * TILE - 3, 6 * TILE, 6, 7 * TILE);
+      gate.lineStyle(2, 0xb987ef, 0.8).lineBetween(gateX * TILE, 6 * TILE, gateX * TILE, 13 * TILE);
+      this.worldLabel(
+        gateX * TILE,
+        5.8 * TILE,
+        `Sceau ${index + 1}`,
+        5,
+        "#d5b6f4",
+      );
+    }
+
+    const roomLabels = [
+      { x: 9, text: "SALLE I · LES DISTORSIONS" },
+      { x: 27, text: "SALLE II · LES TRAQUEURS" },
+      { x: 44, text: "SALLE DU GARDIEN" },
+    ];
+    for (const room of roomLabels) {
+      this.worldLabel(room.x * TILE, 2.2 * TILE, room.text, 5, "#cbb0ec");
+    }
+
+    const entrance = this.add
+      .sprite(2.3 * TILE, 10.5 * TILE, portalTextureKey(0))
+      .setOrigin(0.5, 1)
+      .setScale(0.78)
+      .setDepth(12 * TILE)
+      .play(VISUAL_ANIMATIONS.portal);
+    entrance.setTint(0x9a82bb);
   }
 
   private paintRect(
@@ -555,8 +663,11 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private applySnapshot(snapshot: RealmSnapshot, immediate = false) {
+    const zoneChanged = this.switchZone(snapshot);
+    immediate = immediate || zoneChanged;
     this.latestPlayers = new Map(snapshot.players.map((player) => [player.id, player]));
     this.latestMonsters = new Map(snapshot.monsters.map((monster) => [monster.id, monster]));
+    this.updateRiftViews(snapshot.rifts);
 
     for (const player of snapshot.players) this.updatePlayerView(player, immediate);
     for (const monster of snapshot.monsters) this.updateMonsterView(monster, immediate);
@@ -576,9 +687,153 @@ export class WorldScene extends Phaser.Scene {
 
     const localPlayer = this.localPlayerId ? this.latestPlayers.get(this.localPlayerId) : undefined;
     if (localPlayer) {
+      this.latestLocalPlayer = localPlayer;
+      if (snapshot.zoneKind === "world") {
+        this.lastWorldPosition = { ...localPlayer.position };
+        const now = Date.now();
+        if (now - this.lastSaveAt >= 1_000) {
+          savePlayerSnapshot(localPlayer, now);
+          this.lastSaveAt = now;
+        }
+      }
       this.publishInventory(localPlayer);
       this.publishPlayerHud(localPlayer);
+      const rifts: HudRift[] = snapshot.rifts.map((rift) => ({
+        id: rift.id,
+        rank: rift.rank,
+        x: rift.position.x,
+        y: rift.position.y,
+        spawnedAt: rift.spawnedAt,
+        expiresAt: rift.expiresAt,
+        status: rift.status,
+        outsideBossAlive: rift.outsideBossAlive,
+      }));
+      this.callbacks.onHud({
+        rifts,
+        playerMapPosition: this.lastWorldPosition,
+        mapSize: { width: STARTER_MAP.width, height: STARTER_MAP.height },
+      });
     }
+  }
+
+  private switchZone(snapshot: RealmSnapshot): boolean {
+    const changed = snapshot.zoneId !== this.currentZoneId || snapshot.zoneKind !== this.zoneKind;
+    this.map = snapshot.map;
+    if (!changed) {
+      if (snapshot.riftRun) {
+        this.zoneTitle?.setText(`FAILLE E · SALLE ${snapshot.riftRun.room}/3`);
+        this.introText?.setText(
+          snapshot.riftRun.roomCleared
+            ? "Salle nettoyée · avancez vers la salle suivante"
+            : snapshot.riftRun.room === 3
+              ? "Éliminez le Gardien pour refermer le portail"
+              : "Éliminez tous les monstres pour briser le sceau",
+        );
+      }
+      return false;
+    }
+
+    this.currentZoneId = snapshot.zoneId;
+    this.zoneKind = snapshot.zoneKind;
+    this.worldLayer?.setVisible(snapshot.zoneKind === "world");
+    this.riftLayer?.setVisible(snapshot.zoneKind === "rift");
+    this.cameras.main.setBounds(0, 0, this.map.width * TILE, this.map.height * TILE);
+    this.destinationMarker?.setVisible(false);
+    this.selectedTargetId = null;
+    this.followedPlayerId = null;
+    for (const view of this.playerViews.values()) view.container.destroy(true);
+    for (const view of this.monsterViews.values()) view.container.destroy(true);
+    this.playerViews.clear();
+    this.monsterViews.clear();
+    this.latestPlayers.clear();
+    this.latestMonsters.clear();
+
+    if (snapshot.zoneKind === "world") {
+      this.zoneTitle?.setText("VAL D’AUBE");
+      this.introText?.setText("Zone ouverte · surveillez les nouvelles failles sur la carte");
+    } else if (snapshot.riftRun) {
+      this.zoneTitle?.setText(`FAILLE E · SALLE ${snapshot.riftRun.room}/3`);
+      this.introText?.setText("Éliminez tous les monstres pour briser le sceau");
+      this.showToast("Vous franchissez la faille dimensionnelle", 0xc59aff);
+    }
+    return true;
+  }
+
+  private updateRiftViews(rifts: RiftSnapshot[]): void {
+    this.latestRifts = new Map(rifts.map((rift) => [rift.id, rift]));
+    if (this.zoneKind !== "world") {
+      for (const view of this.riftViews.values()) view.container.setVisible(false);
+      return;
+    }
+
+    const activeIds = new Set(rifts.map((rift) => rift.id));
+    for (const rift of rifts) {
+      let view = this.riftViews.get(rift.id);
+      if (!view) {
+        view = this.createRiftView(rift);
+        this.riftViews.set(rift.id, view);
+      }
+      const point = tileCenter(rift.position);
+      const escaped = rift.status === "boss-escaped";
+      view.container.setPosition(point.x, point.y).setDepth(point.y).setVisible(true);
+      view.sprite.setTint(escaped ? 0xff6f77 : 0xffffff);
+      view.label
+        .setText(
+          escaped
+            ? rift.outsideBossAlive
+              ? "Faille E · GARDIEN ÉCHAPPÉ"
+              : "Faille E · brèche exposée"
+            : "Faille dimensionnelle · Rang E",
+        )
+        .setColor(escaped ? "#ff9a9f" : "#d7a7ff");
+    }
+    for (const [id, view] of this.riftViews) {
+      if (!activeIds.has(id)) {
+        view.container.destroy(true);
+        this.riftViews.delete(id);
+      }
+    }
+  }
+
+  private createRiftView(rift: RiftSnapshot): RiftView {
+    const sprite = this.add
+      .sprite(0, 0, portalTextureKey(0))
+      .setOrigin(0.5, 1)
+      .play(VISUAL_ANIMATIONS.portal);
+    const label = this.add
+      .text(0, -92, "Faille dimensionnelle · Rang E", {
+        fontFamily: "Georgia, serif",
+        fontSize: "10px",
+        color: "#d7a7ff",
+        backgroundColor: "#10151bdd",
+        padding: { x: 5, y: 2 },
+        align: "center",
+      })
+      .setOrigin(0.5, 1);
+    const interaction = this.add
+      .zone(0, -42, 86, 96)
+      .setInteractive({ useHandCursor: true });
+    const container = this.add.container(0, 0, [sprite, interaction, label]);
+    interaction.on(
+      Phaser.Input.Events.POINTER_UP,
+      (
+        _pointer: Phaser.Input.Pointer,
+        _x: number,
+        _y: number,
+        event: Phaser.Types.Input.EventData,
+      ) => {
+        event.stopPropagation();
+        const current = this.latestRifts.get(rift.id) ?? rift;
+        this.socket?.enterRift(current.id);
+        this.showToast(
+          current.status === "boss-escaped" && current.outsideBossAlive
+            ? "Le Gardien extérieur doit être vaincu avant l’entrée"
+            : "Approche du portail en cours…",
+          current.status === "boss-escaped" && current.outsideBossAlive ? 0xf08b8b : 0xc59aff,
+        );
+      },
+    );
+    return { container, label, sprite };
   }
 
   private updatePlayerView(player: PlayerSnapshot, immediate: boolean) {
@@ -813,6 +1068,44 @@ export class WorldScene extends Phaser.Scene {
     if (event.type === "respawn" && event.entityId === this.localPlayerId) {
       this.callbacks.onHud({ alive: true });
       this.showToast("Vous reprenez connaissance au Val d’Aube", 0x8ee6ff);
+      return;
+    }
+    if (event.type === "rift-room-cleared" && event.playerId === this.localPlayerId) {
+      this.showToast(
+        event.nextRoom
+          ? `Salle ${event.room} nettoyée · le sceau vers la salle ${event.nextRoom} est brisé`
+          : `Salle ${event.room} nettoyée`,
+        0xcda5ff,
+      );
+      return;
+    }
+    if (event.type === "rift-boss-escaped") {
+      this.showToast("Alerte régionale · un Gardien vient de sortir d’une faille !", 0xff7f84);
+      return;
+    }
+    if (event.type === "rift-outside-boss-defeated") {
+      this.showToast("Gardien extérieur vaincu · la faille peut maintenant être refermée", 0xf1ca70);
+      return;
+    }
+    if (event.type === "rift-complete" && event.playerId === this.localPlayerId) {
+      const completion: HudRiftCompletion = {
+        riftId: event.riftId,
+        rank: event.rank,
+        elapsedMs: event.elapsedMs,
+        generalXp: event.generalXp,
+        items: event.items.map(({ itemId, quantity }) => {
+          const definition = isKnownItem(itemId) ? ITEM_CATALOG[itemId] : null;
+          return {
+            id: itemId,
+            name: definition?.name ?? "Récompense inconnue",
+            icon: definition?.icon ?? "◆",
+            quantity,
+            rarity: definition?.rarity ?? "common",
+          };
+        }),
+      };
+      this.callbacks.onHud({ riftCompletion: completion });
+      this.showToast("Faille fermée · récompenses sécurisées", 0xf1ca70);
     }
   }
 
@@ -1038,8 +1331,12 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private getPlayerName() {
-    const existing = window.localStorage.getItem(PLAYER_NAME_KEY);
-    if (existing) return existing;
+    try {
+      const existing = window.localStorage.getItem(PLAYER_NAME_KEY);
+      if (existing) return existing;
+    } catch {
+      // A generated in-memory name is sufficient when storage is unavailable.
+    }
     const name = `Aventurier-${Phaser.Math.Between(100, 999)}`;
     try {
       window.localStorage.setItem(PLAYER_NAME_KEY, name);
@@ -1054,6 +1351,9 @@ export class WorldScene extends Phaser.Scene {
     window.removeEventListener("ui:equip", this.equipListener);
     window.removeEventListener("ui:unequip", this.unequipListener);
     window.removeEventListener("ui:respawn", this.respawnListener);
+    window.removeEventListener("ui:connection-mode", this.connectionModeListener);
+    window.removeEventListener("pagehide", this.pageHideListener);
+    this.pageHideListener();
     this.socket?.close();
     this.socket = null;
   }

@@ -3,7 +3,6 @@ import {
   damageAfterDefense,
   generalXpToNext,
   isAwakeningEligible,
-  isValidTrainingTarget,
   masteryXpToNext,
   outgoingPlayerDamage,
   playerMaxHp,
@@ -31,6 +30,27 @@ import {
 } from "../shared/items";
 import { findPath, findPathToAttackRange } from "../shared/pathfinding";
 import type { ClientMessage, JoinMessage } from "../shared/protocol";
+import {
+  RIFT_MAP,
+  RIFT_ROOM_ENTRANCES,
+  RIFT_ROOM_GATES,
+  RIFT_SPAWN_LOCATIONS,
+  RIFT_SPAWN_MAX_DELAY_MS,
+  RIFT_SPAWN_MIN_DELAY_MS,
+  advanceRankERift,
+  completeRiftRoom,
+  createRankERift,
+  createRiftInstance,
+  type RankERift,
+  type RiftInstance,
+  type RiftItemReward,
+  type RiftRoomNumber,
+} from "../shared/rifts";
+import {
+  RIFT_WORLD_SAVE_VERSION,
+  type PersistedRiftWorldState,
+} from "../shared/rift-persistence";
+import type { PersistedPlayerProfile } from "../shared/save";
 import type {
   CombatPath,
   Direction,
@@ -41,7 +61,10 @@ import type {
   MonsterSnapshot,
   PlayerRank,
   PlayerSnapshot,
+  PublicMapDefinition,
   RealmSnapshot,
+  RiftRunSnapshot,
+  RiftSnapshot,
   ServerMessage,
 } from "../shared/types";
 import { clonePosition } from "../shared/types";
@@ -50,17 +73,24 @@ import {
   STARTER_MONSTERS,
   type MonsterDefinition,
 } from "./content";
+import { escapedRiftBoss, riftRoomMonsters } from "./rift-content";
 
 export const REALM_TICK_RATE = 10;
 export const REALM_SNAPSHOT_RATE = 5;
 const TICK_INTERVAL_MS = 1_000 / REALM_TICK_RATE;
 const SNAPSHOT_EVERY_TICKS = REALM_TICK_RATE / REALM_SNAPSHOT_RATE;
 const PLAYER_ATTACK_INTERVAL_MS = 900;
+export const PLAYER_COMBAT_TIMEOUT_MS = 5_000;
+export const PLAYER_HEALTH_REGEN_PER_SECOND = 2;
+const PLAYER_HEALTH_REGEN_INTERVAL_MS = 1_000;
 const REPATH_INTERVAL_MS = 250;
 const DISCONNECTED_PLAYER_TTL_MS = 30_000;
 const MONSTER_WANDER_RADIUS = 3;
 const MONSTER_WANDER_MIN_DELAY_MS = 1_600;
 const MONSTER_WANDER_MAX_DELAY_MS = 3_600;
+const RIFT_COMPLETION_XP = 100;
+const MAX_ACTIVE_RIFTS = 3;
+const RIFT_STATE_CHECKPOINT_INTERVAL_MS = 1_000;
 
 type MasteryKey = "melee" | "ranged" | "magic" | "defense";
 
@@ -83,6 +113,8 @@ interface RuntimePlayer {
   nextMoveAt: number;
   nextAttackAt: number;
   nextRepathAt: number;
+  lastCombatAt: number | null;
+  nextHealthRegenAt: number;
   alive: boolean;
   hp: number;
   mp: number;
@@ -95,6 +127,8 @@ interface RuntimePlayer {
   inventory: Record<string, number>;
   equipment: Record<EquipmentSlot, string | null>;
   lastSequence: number;
+  zoneId: string;
+  pendingRiftId: string | null;
 }
 
 interface RuntimeMonster {
@@ -112,6 +146,26 @@ interface RuntimeMonster {
   alive: boolean;
   hp: number;
   respawnAt: number;
+  zoneId: string;
+  riftId: string | null;
+  riftRoom: RiftRoomNumber | null;
+  escapedFromRift: boolean;
+}
+
+interface RuntimeRift extends RankERift {
+  outsideBossAlive: boolean;
+  outsideBossId: string | null;
+}
+
+interface RuntimeRiftRun {
+  playerId: string;
+  zoneId: string;
+  instance: RiftInstance;
+  activeRoom: RiftRoomNumber;
+  roomCleared: boolean;
+  roomMonsterIds: string[];
+  roomGeneralXp: number;
+  roomItems: Map<string, number>;
 }
 
 interface RealmPeer {
@@ -124,20 +178,36 @@ export interface RealmOptions {
   now?: () => number;
   random?: () => number;
   autoStart?: boolean;
+  /** Browser-provided saves are accepted only by the explicit local/offline realm. */
+  allowClientSaves?: boolean;
+  /** Versioned portal cycle restored only by the local/offline realm. */
+  persistedRiftWorldState?: PersistedRiftWorldState;
+  /** Local persistence hook. Online realms deliberately keep their state in memory. */
+  onRiftWorldStateChange?: (state: PersistedRiftWorldState) => void;
 }
 
 export class InMemoryRealm {
   private readonly now: () => number;
   private readonly random: () => number;
+  private readonly allowClientSaves: boolean;
+  private readonly onRiftWorldStateChange?: (state: PersistedRiftWorldState) => void;
   private readonly peers = new Map<string, RealmPeer>();
   private readonly players = new Map<string, RuntimePlayer>();
   private readonly monsters = new Map<string, RuntimeMonster>();
+  private readonly rifts = new Map<string, RuntimeRift>();
+  private readonly riftRuns = new Map<string, RuntimeRiftRun>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private currentTick = 0;
+  private riftSequence = 0;
+  private nextRiftSpawnAt = 0;
+  private riftStateDirty = false;
+  private nextRiftStateCheckpointAt = 0;
 
   constructor(options: RealmOptions = {}) {
     this.now = options.now ?? Date.now;
     this.random = options.random ?? Math.random;
+    this.allowClientSaves = options.allowClientSaves ?? false;
+    this.onRiftWorldStateChange = options.onRiftWorldStateChange;
     for (const definition of STARTER_MONSTERS) {
       this.monsters.set(definition.id, {
         definition,
@@ -154,8 +224,22 @@ export class InMemoryRealm {
         alive: true,
         hp: definition.maxHp,
         respawnAt: 0,
+        zoneId: STARTER_MAP.id,
+        riftId: null,
+        riftRoom: null,
+        escapedFromRift: false,
       });
     }
+
+    const now = this.now();
+    if (options.persistedRiftWorldState) {
+      this.restoreRiftWorldState(options.persistedRiftWorldState);
+      this.updateRifts(now);
+    } else {
+      this.spawnRift(now, RIFT_SPAWN_LOCATIONS[0].position);
+      this.scheduleNextRift(now);
+    }
+    this.checkpointRiftWorldState(now, true);
 
     if (options.autoStart !== false) this.start();
   }
@@ -167,9 +251,11 @@ export class InMemoryRealm {
   }
 
   stop(): void {
-    if (this.timer === null) return;
-    clearInterval(this.timer);
-    this.timer = null;
+    if (this.timer !== null) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+    this.checkpointRiftWorldState(this.now(), true);
   }
 
   registerPeer(id: string, send: (message: ServerMessage) => void): void {
@@ -203,7 +289,10 @@ export class InMemoryRealm {
     const resumed = message.resumeToken
       ? [...this.players.values()].find((player) => player.resumeToken === message.resumeToken)
       : undefined;
-    const player = resumed ?? this.createPlayer(message.name);
+    const player = resumed ?? this.createPlayer(
+      message.name,
+      this.allowClientSaves ? message.savedProfile : undefined,
+    );
 
     if (player.connectionId && player.connectionId !== peerId) {
       const previousPeer = this.peers.get(player.connectionId);
@@ -212,6 +301,10 @@ export class InMemoryRealm {
 
     player.connectionId = peerId;
     player.disconnectedAt = null;
+    // Command sequences are scoped to a WebSocket/client instance. A refreshed
+    // browser starts again at zero and must not inherit the previous socket's
+    // anti-replay counter.
+    player.lastSequence = -1;
     player.name = this.cleanName(message.name);
     peer.playerId = player.id;
     this.players.set(player.id, player);
@@ -222,8 +315,8 @@ export class InMemoryRealm {
       resumeToken: player.resumeToken,
       tickRate: REALM_TICK_RATE,
       snapshotRate: REALM_SNAPSHOT_RATE,
-      map: STARTER_MAP,
-      snapshot: this.snapshot(),
+      map: this.mapForZone(player.zoneId),
+      snapshot: this.snapshotForPlayer(player),
     });
     this.broadcastSnapshot();
   }
@@ -258,6 +351,10 @@ export class InMemoryRealm {
       );
     }
     if (message.type === "respawn") this.respawnPlayer(player, message.sequence);
+    if (message.type === "rift") {
+      if (message.action === "enter") this.requestEnterRift(player, message.riftId, message.sequence);
+      else this.requestLeaveRift(player, message.riftId, message.sequence);
+    }
     if (message.type === "equip") this.requestEquip(player, message.itemId, message.sequence);
     if (message.type === "unequip") this.requestUnequip(player, message.slot, message.sequence);
   }
@@ -266,28 +363,94 @@ export class InMemoryRealm {
   step(now = this.now()): void {
     this.currentTick += 1;
     this.cleanupDisconnectedPlayers(now);
+    this.updateRifts(now);
     this.updatePlayers(now);
     this.updateMonsters(now);
+    this.regeneratePlayers(now);
+    this.checkpointRiftWorldState(now);
 
     if (this.currentTick % SNAPSHOT_EVERY_TICKS === 0) this.broadcastSnapshot();
   }
 
   snapshot(): RealmSnapshot {
+    return this.worldSnapshot();
+  }
+
+  /** Portable state used only by the browser-local realm. */
+  exportRiftWorldState(savedAt = this.now()): PersistedRiftWorldState {
     return {
-      zoneId: STARTER_MAP.id,
-      tick: this.currentTick,
-      serverTime: this.now(),
-      players: [...this.players.values()]
-        .filter((player) => player.connectionId !== null)
-        .map((player) => this.playerSnapshot(player))
-        .sort((a, b) => a.id.localeCompare(b.id)),
-      monsters: [...this.monsters.values()]
-        .map((monster) => this.monsterSnapshot(monster))
-        .sort((a, b) => a.id.localeCompare(b.id)),
+      version: RIFT_WORLD_SAVE_VERSION,
+      savedAt: Math.max(0, Math.floor(savedAt)),
+      nextRiftSpawnAt: Math.max(0, Math.floor(this.nextRiftSpawnAt)),
+      riftSequence: this.riftSequence,
+      rifts: [...this.rifts.values()]
+        .sort((left, right) => left.spawnedAt - right.spawnedAt || left.id.localeCompare(right.id))
+        .map((rift) => {
+          const boss = rift.outsideBossId
+            ? this.monsters.get(rift.outsideBossId)
+            : undefined;
+          const outsideBoss = rift.outsideBossAlive && boss?.alive
+            ? {
+                position: clonePosition(boss.position),
+                hp: Math.max(1, Math.floor(boss.hp)),
+              }
+            : null;
+          return {
+            id: rift.id,
+            rank: "E" as const,
+            position: clonePosition(rift.position),
+            spawnedAt: Math.max(0, Math.floor(rift.spawnedAt)),
+            expiresAt: Math.max(0, Math.floor(rift.expiresAt)),
+            status: rift.status,
+            outsideBossAlive: outsideBoss !== null,
+            outsideBoss,
+          };
+        }),
     };
   }
 
-  private createPlayer(name: string): RuntimePlayer {
+  private worldSnapshot(): RealmSnapshot {
+    return {
+      zoneId: STARTER_MAP.id,
+      zoneKind: "world",
+      map: STARTER_MAP,
+      tick: this.currentTick,
+      serverTime: this.now(),
+      players: [...this.players.values()]
+        .filter((player) => player.connectionId !== null && player.zoneId === STARTER_MAP.id)
+        .map((player) => this.playerSnapshot(player))
+        .sort((a, b) => a.id.localeCompare(b.id)),
+      monsters: [...this.monsters.values()]
+        .filter((monster) => monster.zoneId === STARTER_MAP.id)
+        .map((monster) => this.monsterSnapshot(monster))
+        .sort((a, b) => a.id.localeCompare(b.id)),
+      rifts: this.riftSnapshots(),
+      riftRun: null,
+    };
+  }
+
+  private snapshotForPlayer(player: RuntimePlayer): RealmSnapshot {
+    if (player.zoneId === STARTER_MAP.id) return this.worldSnapshot();
+    return {
+      zoneId: player.zoneId,
+      zoneKind: "rift",
+      map: RIFT_MAP,
+      tick: this.currentTick,
+      serverTime: this.now(),
+      players: [...this.players.values()]
+        .filter((candidate) => candidate.connectionId !== null && candidate.zoneId === player.zoneId)
+        .map((candidate) => this.playerSnapshot(candidate))
+        .sort((a, b) => a.id.localeCompare(b.id)),
+      monsters: [...this.monsters.values()]
+        .filter((monster) => monster.zoneId === player.zoneId)
+        .map((monster) => this.monsterSnapshot(monster))
+        .sort((a, b) => a.id.localeCompare(b.id)),
+      rifts: this.riftSnapshots(),
+      riftRun: this.riftRunSnapshot(player),
+    };
+  }
+
+  private createPlayer(name: string, saved?: PersistedPlayerProfile): RuntimePlayer {
     const position = this.nearestOpenPosition(STARTER_MAP.playerSpawn);
     const player: RuntimePlayer = {
       id: crypto.randomUUID(),
@@ -303,6 +466,8 @@ export class InMemoryRealm {
       nextMoveAt: 0,
       nextAttackAt: 0,
       nextRepathAt: 0,
+      lastCombatAt: null,
+      nextHealthRegenAt: this.now() + PLAYER_HEALTH_REGEN_INTERVAL_MS,
       alive: true,
       hp: playerMaxHp(1, null),
       mp: playerMaxMp(1),
@@ -331,7 +496,10 @@ export class InMemoryRealm {
         ring: null,
       },
       lastSequence: -1,
+      zoneId: STARTER_MAP.id,
+      pendingRiftId: null,
     };
+    if (saved) this.restorePlayer(player, saved);
     return player;
   }
 
@@ -340,14 +508,481 @@ export class InMemoryRealm {
     return cleaned || "Aventurier";
   }
 
+  private restorePlayer(player: RuntimePlayer, saved: PersistedPlayerProfile): void {
+    player.level = Math.max(1, Math.floor(saved.level));
+    player.xp = Math.min(Math.max(0, Math.floor(saved.xp)), generalXpToNext(player.level) - 1);
+
+    const hasAwakenedPath = saved.rank !== null && saved.combatPath !== "adventurer";
+    player.rank = hasAwakenedPath ? saved.rank : null;
+    player.combatPath = hasAwakenedPath ? saved.combatPath : "adventurer";
+    player.className = hasAwakenedPath ? this.cleanName(saved.className) : "Aventurier";
+
+    for (const key of ["melee", "ranged", "magic", "defense"] as const) {
+      const level = Math.max(0, Math.floor(saved.masteries[key].level));
+      player.masteries[key] = {
+        level,
+        xp: Math.min(
+          Math.max(0, Math.floor(saved.masteries[key].xp)),
+          masteryXpToNext(level) - 1,
+        ),
+      };
+    }
+
+    const inventory: Record<string, number> = {};
+    for (const entry of saved.inventory) {
+      if (!isKnownItem(entry.itemId)) continue;
+      inventory[entry.itemId] = Math.min(
+        9_999,
+        (inventory[entry.itemId] ?? 0) + Math.max(0, Math.floor(entry.quantity)),
+      );
+    }
+    player.inventory = inventory;
+    player.equipment = {
+      head: null,
+      weapon: null,
+      armor: null,
+      legs: null,
+      boots: null,
+      ring: null,
+    };
+    for (const slot of Object.keys(player.equipment) as EquipmentSlot[]) {
+      const itemId = saved.equipment[slot];
+      if (!itemId || !isKnownItem(itemId) || (player.inventory[itemId] ?? 0) < 1) continue;
+      const definition = ITEM_CATALOG[itemId];
+      if (
+        definition.kind === "equipment" &&
+        definition.equipmentSlot === slot &&
+        meetsItemRank(player.rank, definition.requiredRank)
+      ) {
+        player.equipment[slot] = itemId;
+      }
+    }
+
+    const savedPosition = clonePosition(saved.position);
+    if (isWalkable(STARTER_MAP, savedPosition, this.occupiedPositions(STARTER_MAP.id))) {
+      player.position = savedPosition;
+    }
+    player.hp = Math.min(this.playerMaxHp(player), Math.max(1, Math.floor(saved.hp)));
+    player.mp = Math.min(this.playerMaxMp(player), Math.max(0, Math.floor(saved.mp)));
+    player.nextHealthRegenAt = this.now() + PLAYER_HEALTH_REGEN_INTERVAL_MS;
+  }
+
+  private restoreRiftWorldState(saved: PersistedRiftWorldState): void {
+    this.rifts.clear();
+    this.nextRiftSpawnAt = saved.nextRiftSpawnAt;
+    this.riftSequence = saved.riftSequence;
+
+    for (const persisted of saved.rifts) {
+      const rift: RuntimeRift = {
+        id: persisted.id,
+        rank: "E",
+        position: clonePosition(persisted.position),
+        spawnedAt: persisted.spawnedAt,
+        expiresAt: persisted.expiresAt,
+        status: persisted.status,
+        outsideBossAlive: persisted.outsideBossAlive,
+        outsideBossId: null,
+      };
+      this.rifts.set(rift.id, rift);
+
+      const sequence = /^rift-e-(\d+)$/.exec(rift.id)?.[1];
+      if (sequence) this.riftSequence = Math.max(this.riftSequence, Number(sequence));
+
+      if (!persisted.outsideBossAlive || !persisted.outsideBoss) continue;
+      const preferred = persisted.outsideBoss.position;
+      const spawn = isWalkable(
+        STARTER_MAP,
+        preferred,
+        this.occupiedPositions(STARTER_MAP.id),
+      )
+        ? clonePosition(preferred)
+        : this.nearestOpenPosition(
+            { x: rift.position.x, y: rift.position.y + 3 },
+            STARTER_MAP.id,
+          );
+      const definition = escapedRiftBoss(rift.id, spawn);
+      const boss = this.addRuntimeMonster(definition, STARTER_MAP.id, rift.id, null, true);
+      boss.hp = Math.min(definition.maxHp, Math.max(1, persisted.outsideBoss.hp));
+      rift.outsideBossId = definition.id;
+      rift.outsideBossAlive = true;
+    }
+  }
+
+  private markRiftWorldStateDirty(): void {
+    this.riftStateDirty = true;
+  }
+
+  private checkpointRiftWorldState(now: number, force = false): void {
+    if (!this.onRiftWorldStateChange) return;
+    if (!force && (!this.riftStateDirty || now < this.nextRiftStateCheckpointAt)) return;
+    try {
+      this.onRiftWorldStateChange(this.exportRiftWorldState(now));
+      this.riftStateDirty = false;
+      this.nextRiftStateCheckpointAt = now + RIFT_STATE_CHECKPOINT_INTERVAL_MS;
+    } catch {
+      // Persistence failure must never stop the authoritative local simulation.
+      this.riftStateDirty = true;
+      this.nextRiftStateCheckpointAt = now + RIFT_STATE_CHECKPOINT_INTERVAL_MS;
+    }
+  }
+
+  private riftSnapshots(): RiftSnapshot[] {
+    return [...this.rifts.values()]
+      .map((rift) => ({
+        id: rift.id,
+        rank: rift.rank,
+        position: clonePosition(rift.position),
+        spawnedAt: rift.spawnedAt,
+        expiresAt: rift.expiresAt,
+        status: rift.status,
+        outsideBossAlive: rift.outsideBossAlive,
+      }))
+      .sort((left, right) => left.spawnedAt - right.spawnedAt || left.id.localeCompare(right.id));
+  }
+
+  private riftRunSnapshot(player: RuntimePlayer): RiftRunSnapshot | null {
+    const run = this.riftRuns.get(player.id);
+    if (!run) return null;
+    return {
+      instanceId: run.instance.id,
+      riftId: run.instance.riftId,
+      rank: "E",
+      startedAt: run.instance.startedAt,
+      room: run.activeRoom,
+      totalRooms: 3,
+      roomCleared: run.roomCleared,
+    };
+  }
+
+  private scheduleNextRift(now: number): void {
+    const spread = RIFT_SPAWN_MAX_DELAY_MS - RIFT_SPAWN_MIN_DELAY_MS;
+    this.nextRiftSpawnAt = now + RIFT_SPAWN_MIN_DELAY_MS + Math.floor(this.randomUnit() * spread);
+    this.markRiftWorldStateDirty();
+  }
+
+  private spawnRift(now: number, requestedPosition?: GridPosition): RuntimeRift | null {
+    if (this.rifts.size >= MAX_ACTIVE_RIFTS) return null;
+    const occupied = new Set([...this.rifts.values()].map((rift) => positionKey(rift.position)));
+    const candidates = RIFT_SPAWN_LOCATIONS.filter(
+      (location) => !occupied.has(positionKey(location.position)),
+    );
+    const position = requestedPosition ?? candidates[Math.floor(this.randomUnit() * candidates.length)]?.position;
+    if (!position) return null;
+    const created = createRankERift({
+      id: `rift-e-${++this.riftSequence}`,
+      position,
+      spawnedAt: now,
+    });
+    const rift: RuntimeRift = {
+      ...created,
+      outsideBossAlive: false,
+      outsideBossId: null,
+    };
+    this.rifts.set(rift.id, rift);
+    this.markRiftWorldStateDirty();
+    return rift;
+  }
+
+  private updateRifts(now: number): void {
+    for (const [id, rift] of this.rifts) {
+      const advanced = advanceRankERift(rift, now);
+      if (advanced.status === "boss-escaped" && rift.status !== "boss-escaped") {
+        const escaped: RuntimeRift = { ...rift, status: "boss-escaped" };
+        this.rifts.set(id, escaped);
+        this.spawnEscapedRiftBoss(escaped);
+      }
+    }
+
+    if (now >= this.nextRiftSpawnAt) {
+      this.spawnRift(now);
+      this.scheduleNextRift(now);
+    }
+  }
+
+  private spawnEscapedRiftBoss(rift: RuntimeRift): void {
+    const preferred = { x: rift.position.x, y: rift.position.y + 3 };
+    const spawn = this.nearestOpenPosition(preferred, STARTER_MAP.id);
+    const definition = escapedRiftBoss(rift.id, spawn);
+    this.addRuntimeMonster(definition, STARTER_MAP.id, rift.id, null, true);
+    rift.outsideBossAlive = true;
+    rift.outsideBossId = definition.id;
+    this.markRiftWorldStateDirty();
+
+    for (const run of [...this.riftRuns.values()]) {
+      if (run.instance.riftId !== rift.id) continue;
+      const player = this.players.get(run.playerId);
+      if (!player) continue;
+      this.abandonRift(player);
+      this.sendPlayerError(
+        player,
+        "RIFT_BOSS_ESCAPED",
+        "Le Gardien s’est échappé. Tuez-le à l’extérieur avant de reprendre la faille.",
+      );
+    }
+    this.broadcastEvent({ type: "rift-boss-escaped", riftId: rift.id, bossId: definition.id });
+  }
+
+  private addRuntimeMonster(
+    definition: MonsterDefinition,
+    zoneId: string,
+    riftId: string | null,
+    riftRoom: RiftRoomNumber | null,
+    escapedFromRift = false,
+  ): RuntimeMonster {
+    const monster: RuntimeMonster = {
+      definition,
+      position: clonePosition(definition.spawn),
+      direction: "south",
+      path: [],
+      targetId: null,
+      provokedById: null,
+      lastTargetPosition: null,
+      nextMoveAt: 0,
+      nextAttackAt: 0,
+      nextRepathAt: 0,
+      nextWanderAt: 0,
+      alive: true,
+      hp: definition.maxHp,
+      respawnAt: 0,
+      zoneId,
+      riftId,
+      riftRoom,
+      escapedFromRift,
+    };
+    this.monsters.set(definition.id, monster);
+    return monster;
+  }
+
+  private requestEnterRift(
+    player: RuntimePlayer,
+    riftId: string,
+    sequence: number,
+  ): void {
+    if (!player.alive || player.zoneId !== STARTER_MAP.id || this.riftRuns.has(player.id)) {
+      this.sendPlayerError(player, "RIFT_ENTRY_INVALID", "Vous ne pouvez pas entrer maintenant.", sequence);
+      return;
+    }
+    const rift = this.rifts.get(riftId);
+    if (!rift) {
+      this.sendPlayerError(player, "RIFT_GONE", "Cette faille a déjà disparu.", sequence);
+      return;
+    }
+    if (rift.outsideBossAlive) {
+      this.sendPlayerError(
+        player,
+        "RIFT_BOSS_OUTSIDE",
+        "Le Gardien échappé doit d’abord être vaincu à l’extérieur.",
+        sequence,
+      );
+      return;
+    }
+    if (manhattanDistance(player.position, rift.position) <= 1) {
+      this.enterRift(player, rift, this.now());
+      return;
+    }
+    const path = findPathToAttackRange(STARTER_MAP, player.position, rift.position, 1, {
+      occupied: this.occupiedPositions(STARTER_MAP.id, new Set([player.id])),
+    });
+    if (!path) {
+      this.sendPlayerError(player, "NO_PATH", "Le portail est inaccessible.", sequence);
+      return;
+    }
+    player.targetId = null;
+    player.pendingRiftId = rift.id;
+    player.path = path;
+  }
+
+  private enterRift(player: RuntimePlayer, rift: RuntimeRift, now: number): void {
+    if (!this.rifts.has(rift.id) || rift.outsideBossAlive) return;
+    const instance = createRiftInstance({
+      id: crypto.randomUUID(),
+      riftId: rift.id,
+      startedAt: now,
+    });
+    const run: RuntimeRiftRun = {
+      playerId: player.id,
+      zoneId: `rift:${instance.id}`,
+      instance,
+      activeRoom: 1,
+      roomCleared: false,
+      roomMonsterIds: [],
+      roomGeneralXp: 0,
+      roomItems: new Map(),
+    };
+    this.riftRuns.set(player.id, run);
+    player.zoneId = run.zoneId;
+    player.position = clonePosition(RIFT_MAP.playerSpawn);
+    player.direction = "east";
+    player.path = [];
+    player.targetId = null;
+    player.pendingRiftId = null;
+    player.lastTargetPosition = null;
+    this.spawnRiftRoom(run);
+    this.broadcastSnapshot();
+  }
+
+  private spawnRiftRoom(run: RuntimeRiftRun): void {
+    run.roomMonsterIds = riftRoomMonsters(run.instance.id, run.activeRoom).map((definition) => {
+      this.addRuntimeMonster(definition, run.zoneId, run.instance.riftId, run.activeRoom);
+      return definition.id;
+    });
+    run.roomGeneralXp = 0;
+    run.roomItems = new Map();
+    run.roomCleared = false;
+  }
+
+  private advanceRiftRoomIfNeeded(player: RuntimePlayer): boolean {
+    const run = this.riftRuns.get(player.id);
+    if (!run || !run.roomCleared || run.activeRoom >= 3) return false;
+    const nextRoom = (run.activeRoom + 1) as RiftRoomNumber;
+    if (player.position.x < RIFT_ROOM_ENTRANCES[nextRoom - 1]) return false;
+    for (const id of run.roomMonsterIds) this.monsters.delete(id);
+    run.activeRoom = nextRoom;
+    this.spawnRiftRoom(run);
+    return true;
+  }
+
+  private clearRiftRoom(player: RuntimePlayer, run: RuntimeRiftRun, now: number): void {
+    const finalRoom = run.activeRoom === 3;
+    const rift = this.rifts.get(run.instance.riftId);
+    if (finalRoom && rift?.outsideBossAlive) {
+      this.rejectRiftClosureWhileBossOutside(player);
+      return;
+    }
+    const guaranteedItems: RiftItemReward[] = finalRoom
+      ? [
+          { itemId: "poussiere-dimensionnelle", quantity: 3 },
+          { itemId: "croc-de-faille", quantity: 1 },
+        ]
+      : [];
+    const roomItems = [
+      ...run.roomItems.entries().map(([itemId, quantity]) => ({ itemId, quantity })),
+      ...guaranteedItems,
+    ];
+    run.instance = completeRiftRoom(run.instance, {
+      room: run.activeRoom,
+      clearedAt: now,
+      rewards: {
+        generalXp: run.roomGeneralXp + (finalRoom ? RIFT_COMPLETION_XP : 0),
+        items: roomItems,
+      },
+    });
+
+    if (!finalRoom) {
+      run.roomCleared = true;
+      this.sendEventToPlayer(player, {
+        type: "rift-room-cleared",
+        playerId: player.id,
+        riftId: run.instance.riftId,
+        room: run.activeRoom,
+        nextRoom: (run.activeRoom + 1) as 2 | 3,
+      });
+      return;
+    }
+
+    this.addGeneralXp(player, RIFT_COMPLETION_XP);
+    for (const reward of guaranteedItems) {
+      player.inventory[reward.itemId] = (player.inventory[reward.itemId] ?? 0) + reward.quantity;
+    }
+    this.finishRift(player, run, now);
+  }
+
+  private finishRift(player: RuntimePlayer, run: RuntimeRiftRun, now: number): void {
+    const rift = this.rifts.get(run.instance.riftId);
+    if (rift?.outsideBossAlive) {
+      this.rejectRiftClosureWhileBossOutside(player);
+      return;
+    }
+    const returnPosition = rift
+      ? { x: rift.position.x, y: rift.position.y + 3 }
+      : STARTER_MAP.playerSpawn;
+    for (const [id, monster] of this.monsters) {
+      if (monster.zoneId === run.zoneId) this.monsters.delete(id);
+    }
+    if (rift?.outsideBossId) this.monsters.delete(rift.outsideBossId);
+    this.riftRuns.delete(player.id);
+    this.rifts.delete(run.instance.riftId);
+    this.markRiftWorldStateDirty();
+    player.zoneId = STARTER_MAP.id;
+    player.position = this.nearestOpenPosition(returnPosition, STARTER_MAP.id);
+    player.direction = "south";
+    player.path = [];
+    player.targetId = null;
+    player.pendingRiftId = null;
+
+    this.sendEventToPlayer(player, {
+      type: "rift-complete",
+      playerId: player.id,
+      riftId: run.instance.riftId,
+      rank: "E",
+      elapsedMs: Math.max(0, now - run.instance.startedAt),
+      generalXp: run.instance.rewards.generalXp,
+      items: run.instance.rewards.items.map((reward) => ({ ...reward })),
+    });
+    this.broadcastSnapshot();
+  }
+
+  private rejectRiftClosureWhileBossOutside(player: RuntimePlayer): void {
+    this.abandonRift(player);
+    this.sendPlayerError(
+      player,
+      "RIFT_BOSS_OUTSIDE",
+      "La faille résiste : le Gardien extérieur doit être vaincu avant sa fermeture.",
+    );
+    this.broadcastSnapshot();
+  }
+
+  private requestLeaveRift(player: RuntimePlayer, riftId: string, sequence: number): void {
+    const run = this.riftRuns.get(player.id);
+    if (!run || run.instance.riftId !== riftId) {
+      this.sendPlayerError(player, "RIFT_NOT_ACTIVE", "Vous n’êtes pas dans cette faille.", sequence);
+      return;
+    }
+    this.abandonRift(player);
+    this.broadcastSnapshot();
+  }
+
+  private abandonRift(player: RuntimePlayer): void {
+    const run = this.riftRuns.get(player.id);
+    if (!run) return;
+    for (const [id, monster] of this.monsters) {
+      if (monster.zoneId === run.zoneId) this.monsters.delete(id);
+    }
+    const rift = this.rifts.get(run.instance.riftId);
+    this.riftRuns.delete(player.id);
+    player.zoneId = STARTER_MAP.id;
+    player.position = this.nearestOpenPosition(
+      rift ? { x: rift.position.x, y: rift.position.y + 3 } : STARTER_MAP.playerSpawn,
+      STARTER_MAP.id,
+    );
+    player.path = [];
+    player.targetId = null;
+    player.pendingRiftId = null;
+  }
+
   private requestMove(player: RuntimePlayer, destination: GridPosition, sequence: number): void {
     if (!player.alive) {
       this.sendPlayerError(player, "PLAYER_DEAD", "Vous devez réapparaître.", sequence);
       return;
     }
 
-    const path = findPath(STARTER_MAP, player.position, destination, {
-      occupied: this.occupiedPositions(new Set([player.id])),
+    const run = this.riftRuns.get(player.id);
+    if (run && !run.roomCleared && run.activeRoom < 3) {
+      const gateX = RIFT_ROOM_GATES[run.activeRoom - 1];
+      if (destination.x >= gateX) {
+        this.sendPlayerError(
+          player,
+          "RIFT_ROOM_LOCKED",
+          "Éliminez tous les monstres avant de franchir cette porte.",
+          sequence,
+        );
+        return;
+      }
+    }
+
+    const map = this.mapForZone(player.zoneId);
+    const path = findPath(map, player.position, destination, {
+      occupied: this.occupiedPositions(player.zoneId, new Set([player.id])),
     });
     if (path === null) {
       this.sendPlayerError(player, "NO_PATH", "Cette case est inaccessible.", sequence);
@@ -355,6 +990,7 @@ export class InMemoryRealm {
     }
 
     player.targetId = null;
+    player.pendingRiftId = null;
     player.lastTargetPosition = null;
     player.path = path;
   }
@@ -366,12 +1002,13 @@ export class InMemoryRealm {
     }
 
     const target = this.monsters.get(targetId);
-    if (!target?.alive) {
+    if (!target?.alive || target.zoneId !== player.zoneId) {
       this.sendPlayerError(player, "INVALID_TARGET", "Cette cible n'est pas disponible.", sequence);
       return;
     }
 
     player.targetId = targetId;
+    player.pendingRiftId = null;
     player.path = [];
     player.lastTargetPosition = null;
     player.nextRepathAt = 0;
@@ -433,10 +1070,28 @@ export class InMemoryRealm {
     for (const player of this.players.values()) {
       if (!player.connectionId || !player.alive) continue;
 
+      if (player.pendingRiftId && player.zoneId === STARTER_MAP.id) {
+        const rift = this.rifts.get(player.pendingRiftId);
+        if (!rift) {
+          player.pendingRiftId = null;
+          player.path = [];
+        } else if (manhattanDistance(player.position, rift.position) <= 1) {
+          this.enterRift(player, rift, now);
+          continue;
+        }
+      }
+
       const target = player.targetId ? this.monsters.get(player.targetId) : undefined;
-      if (target && target.alive) {
+      if (target && target.alive && target.zoneId === player.zoneId) {
         player.direction = directionBetween(player.position, target.position);
-        if (this.canAttack(player.position, target.position, this.attackRange(player))) {
+        if (
+          this.canAttack(
+            player.position,
+            target.position,
+            this.attackRange(player),
+            this.mapForZone(player.zoneId),
+          )
+        ) {
           player.path = [];
           if (now >= player.nextAttackAt) this.playerAttack(player, target, now);
           continue;
@@ -459,12 +1114,18 @@ export class InMemoryRealm {
   }
 
   private planPlayerAttackPath(player: RuntimePlayer, target: RuntimeMonster, now: number): void {
+    const map = this.mapForZone(player.zoneId);
     const path = findPathToAttackRange(
-      STARTER_MAP,
+      map,
       player.position,
       target.position,
       this.attackRange(player),
-      { occupied: this.occupiedPositions(new Set([player.id, target.definition.id])) },
+      {
+        occupied: this.occupiedPositions(
+          player.zoneId,
+          new Set([player.id, target.definition.id]),
+        ),
+      },
     );
     player.path = path ?? [];
     player.lastTargetPosition = clonePosition(target.position);
@@ -486,8 +1147,9 @@ export class InMemoryRealm {
     let steps = 0;
     while (player.path.length > 0 && now >= player.nextMoveAt && steps < 2) {
       const next = player.path[0];
-      const occupied = this.occupiedPositions(new Set([player.id]));
-      if (!isWalkable(STARTER_MAP, next, occupied)) {
+      const map = this.mapForZone(player.zoneId);
+      const occupied = this.occupiedPositions(player.zoneId, new Set([player.id]));
+      if (!isWalkable(map, next, occupied)) {
         player.path = [];
         player.nextRepathAt = 0;
         return;
@@ -498,15 +1160,21 @@ export class InMemoryRealm {
       player.path.shift();
       player.nextMoveAt += interval;
       steps += 1;
+      if (this.advanceRiftRoomIfNeeded(player)) {
+        player.path = [];
+        break;
+      }
     }
   }
 
   private playerAttack(player: RuntimePlayer, target: RuntimeMonster, now: number): void {
     player.nextAttackAt = now + PLAYER_ATTACK_INTERVAL_MS;
+    this.markPlayerInCombat(player, now);
     const offensive = this.playerCombatStat(player);
     const rawDamage = outgoingPlayerDamage(offensive, player.rank);
     const damage = damageAfterDefense(rawDamage, target.definition.defense);
     target.hp = Math.max(0, target.hp - damage);
+    if (target.escapedFromRift) this.markRiftWorldStateDirty();
     if (target.definition.behaviour === "defensive") target.provokedById = player.id;
 
     this.broadcastEvent({
@@ -517,18 +1185,16 @@ export class InMemoryRealm {
       remainingHp: target.hp,
     });
 
-    if (isValidTrainingTarget(player.level, target.definition.level)) {
-      const mastery = this.masteryForPath(player.combatPath);
-      const xp = trainingXpForAction(5, player.rank);
-      this.addMasteryXp(player, mastery, xp);
-      this.sendEventToPlayer(player, {
-        type: "xp",
-        playerId: player.id,
-        general: 0,
-        mastery,
-        masteryXp: xp,
-      });
-    }
+    const mastery = this.masteryForPath(player.combatPath);
+    const xp = trainingXpForAction(5, player.rank);
+    this.addMasteryXp(player, mastery, xp);
+    this.sendEventToPlayer(player, {
+      type: "xp",
+      playerId: player.id,
+      general: 0,
+      mastery,
+      masteryXp: xp,
+    });
 
     if (target.hp <= 0) this.killMonster(target, player, now);
   }
@@ -536,15 +1202,22 @@ export class InMemoryRealm {
   private updateMonsters(now: number): void {
     for (const monster of this.monsters.values()) {
       if (!monster.alive) {
-        if (now >= monster.respawnAt) this.respawnMonster(monster);
+        if (monster.riftId === null && now >= monster.respawnAt) this.respawnMonster(monster);
         continue;
       }
 
       this.updateMonsterTarget(monster);
       const target = monster.targetId ? this.players.get(monster.targetId) : undefined;
-      if (target?.alive && target.connectionId) {
+      if (target?.alive && target.connectionId && target.zoneId === monster.zoneId) {
         monster.direction = directionBetween(monster.position, target.position);
-        if (this.canAttack(monster.position, target.position, 1)) {
+        if (
+          this.canAttack(
+            monster.position,
+            target.position,
+            1,
+            this.mapForZone(monster.zoneId),
+          )
+        ) {
           monster.path = [];
           if (now >= monster.nextAttackAt) this.monsterAttack(monster, target, now);
           continue;
@@ -555,8 +1228,11 @@ export class InMemoryRealm {
           positionKey(monster.lastTargetPosition) !== positionKey(target.position);
         if (targetMoved || monster.path.length === 0 || now >= monster.nextRepathAt) {
           monster.path =
-            findPathToAttackRange(STARTER_MAP, monster.position, target.position, 1, {
-              occupied: this.occupiedPositions(new Set([monster.definition.id, target.id])),
+            findPathToAttackRange(this.mapForZone(monster.zoneId), monster.position, target.position, 1, {
+              occupied: this.occupiedPositions(
+                monster.zoneId,
+                new Set([monster.definition.id, target.id]),
+              ),
             }) ?? [];
           monster.lastTargetPosition = clonePosition(target.position);
           monster.nextRepathAt = now + REPATH_INTERVAL_MS;
@@ -579,7 +1255,12 @@ export class InMemoryRealm {
           monster.definition.leashRange ||
         manhattanDistance(current.position, monster.definition.spawn) >
           monster.definition.leashRange + 2;
-      if (!current.alive || !current.connectionId || outsideLeash) {
+      if (
+        !current.alive ||
+        !current.connectionId ||
+        current.zoneId !== monster.zoneId ||
+        outsideLeash
+      ) {
         monster.targetId = null;
         monster.provokedById = null;
         monster.path = [];
@@ -605,7 +1286,7 @@ export class InMemoryRealm {
     let closest: RuntimePlayer | null = null;
     let closestDistance = Number.POSITIVE_INFINITY;
     for (const player of this.players.values()) {
-      if (!player.alive || !player.connectionId) continue;
+      if (!player.alive || !player.connectionId || player.zoneId !== monster.zoneId) continue;
       const distance = manhattanDistance(monster.position, player.position);
       if (distance <= monster.definition.detectionRange && distance < closestDistance) {
         closest = player;
@@ -627,8 +1308,8 @@ export class InMemoryRealm {
     if (distanceFromSpawn > wanderRadius) {
       if (monster.path.length === 0 || now >= monster.nextRepathAt) {
         monster.path =
-          findPath(STARTER_MAP, monster.position, monster.definition.spawn, {
-            occupied: this.occupiedPositions(new Set([monster.definition.id])),
+          findPath(this.mapForZone(monster.zoneId), monster.position, monster.definition.spawn, {
+            occupied: this.occupiedPositions(monster.zoneId, new Set([monster.definition.id])),
           }) ?? [];
         monster.nextRepathAt = now + REPATH_INTERVAL_MS;
       }
@@ -637,7 +1318,7 @@ export class InMemoryRealm {
 
     if (monster.path.length > 0 || now < monster.nextWanderAt) return;
 
-    const occupied = this.occupiedPositions(new Set([monster.definition.id]));
+    const occupied = this.occupiedPositions(monster.zoneId, new Set([monster.definition.id]));
     const candidates: GridPosition[] = [];
     for (
       let y = monster.definition.spawn.y - wanderRadius;
@@ -653,7 +1334,7 @@ export class InMemoryRealm {
         if (
           positionKey(candidate) !== positionKey(monster.position) &&
           manhattanDistance(candidate, monster.definition.spawn) <= wanderRadius &&
-          isWalkable(STARTER_MAP, candidate, occupied)
+          isWalkable(this.mapForZone(monster.zoneId), candidate, occupied)
         ) {
           candidates.push(candidate);
         }
@@ -670,7 +1351,7 @@ export class InMemoryRealm {
     const startIndex = Math.floor(roll * candidates.length);
     for (let offset = 0; offset < candidates.length; offset += 1) {
       const destination = candidates[(startIndex + offset) % candidates.length];
-      const path = findPath(STARTER_MAP, monster.position, destination, { occupied });
+      const path = findPath(this.mapForZone(monster.zoneId), monster.position, destination, { occupied });
       if (
         path &&
         path.length > 0 &&
@@ -693,8 +1374,8 @@ export class InMemoryRealm {
   private advanceMonster(monster: RuntimeMonster, now: number): void {
     if (monster.path.length === 0 || now < monster.nextMoveAt) return;
     const next = monster.path[0];
-    const occupied = this.occupiedPositions(new Set([monster.definition.id]));
-    if (!isWalkable(STARTER_MAP, next, occupied)) {
+    const occupied = this.occupiedPositions(monster.zoneId, new Set([monster.definition.id]));
+    if (!isWalkable(this.mapForZone(monster.zoneId), next, occupied)) {
       monster.path = [];
       monster.nextRepathAt = 0;
       return;
@@ -704,10 +1385,12 @@ export class InMemoryRealm {
     monster.position = clonePosition(next);
     monster.path.shift();
     monster.nextMoveAt = now + monster.definition.moveIntervalMs;
+    if (monster.escapedFromRift) this.markRiftWorldStateDirty();
   }
 
   private monsterAttack(monster: RuntimeMonster, player: RuntimePlayer, now: number): void {
     monster.nextAttackAt = now + monster.definition.attackIntervalMs;
+    this.markPlayerInCombat(player, now);
     const effectiveDefense = this.playerDefenseStat(player) * (1 + rankBonus(player.rank));
     const damage = damageAfterDefense(monster.definition.attackDamage, effectiveDefense);
     player.hp = Math.max(0, player.hp - damage);
@@ -719,17 +1402,15 @@ export class InMemoryRealm {
       remainingHp: player.hp,
     });
 
-    if (isValidTrainingTarget(player.level, monster.definition.level)) {
-      const xp = trainingXpForAction(3, player.rank);
-      this.addMasteryXp(player, "defense", xp);
-      this.sendEventToPlayer(player, {
-        type: "xp",
-        playerId: player.id,
-        general: 0,
-        mastery: "defense",
-        masteryXp: xp,
-      });
-    }
+    const xp = trainingXpForAction(3, player.rank);
+    this.addMasteryXp(player, "defense", xp);
+    this.sendEventToPlayer(player, {
+      type: "xp",
+      playerId: player.id,
+      general: 0,
+      mastery: "defense",
+      masteryXp: xp,
+    });
 
     if (player.hp <= 0) {
       player.alive = false;
@@ -747,7 +1428,9 @@ export class InMemoryRealm {
     monster.targetId = null;
     monster.provokedById = null;
     monster.lastTargetPosition = null;
-    monster.respawnAt = now + monster.definition.respawnMs;
+    monster.respawnAt = monster.riftId === null
+      ? now + monster.definition.respawnMs
+      : Number.POSITIVE_INFINITY;
     killer.targetId = null;
     killer.path = [];
     this.broadcastEvent({
@@ -757,6 +1440,10 @@ export class InMemoryRealm {
     });
 
     this.addGeneralXp(killer, monster.definition.xpReward);
+    const run = this.riftRuns.get(killer.id);
+    if (run && monster.zoneId === run.zoneId && monster.riftRoom === run.activeRoom) {
+      run.roomGeneralXp += monster.definition.xpReward;
+    }
     this.sendEventToPlayer(killer, {
       type: "xp",
       playerId: killer.id,
@@ -767,12 +1454,38 @@ export class InMemoryRealm {
     if (this.random() <= monster.definition.lootChance) {
       const itemId = monster.definition.lootItemId;
       killer.inventory[itemId] = (killer.inventory[itemId] ?? 0) + 1;
+      if (run && monster.zoneId === run.zoneId && monster.riftRoom === run.activeRoom) {
+        run.roomItems.set(itemId, (run.roomItems.get(itemId) ?? 0) + 1);
+      }
       this.sendEventToPlayer(killer, {
         type: "loot",
         playerId: killer.id,
         itemId,
         quantity: 1,
       });
+    }
+
+    if (monster.escapedFromRift && monster.riftId) {
+      const rift = this.rifts.get(monster.riftId);
+      if (rift) {
+        rift.outsideBossAlive = false;
+        rift.outsideBossId = null;
+        this.markRiftWorldStateDirty();
+        this.broadcastEvent({
+          type: "rift-outside-boss-defeated",
+          riftId: rift.id,
+          playerId: killer.id,
+        });
+      }
+      this.monsters.delete(monster.definition.id);
+      return;
+    }
+
+    if (run && monster.riftRoom === run.activeRoom) {
+      const roomCleared = run.roomMonsterIds.every(
+        (id) => this.monsters.get(id)?.alive === false,
+      );
+      if (roomCleared) this.clearRiftRoom(killer, run, now);
     }
   }
 
@@ -802,13 +1515,45 @@ export class InMemoryRealm {
       this.sendPlayerError(player, "ALREADY_ALIVE", "Vous êtes déjà en vie.", sequence);
       return;
     }
+    if (this.riftRuns.has(player.id)) this.abandonRift(player);
     player.alive = true;
-    player.position = this.nearestOpenPosition(STARTER_MAP.playerSpawn);
+    player.zoneId = STARTER_MAP.id;
+    player.position = this.nearestOpenPosition(STARTER_MAP.playerSpawn, STARTER_MAP.id);
     player.hp = this.playerMaxHp(player);
     player.mp = this.playerMaxMp(player);
     player.direction = "south";
     player.path = [];
+    player.pendingRiftId = null;
+    player.lastCombatAt = null;
+    player.nextHealthRegenAt = this.now() + PLAYER_HEALTH_REGEN_INTERVAL_MS;
     this.broadcastEvent({ type: "respawn", entityId: player.id, position: player.position });
+  }
+
+  private markPlayerInCombat(player: RuntimePlayer, now: number): void {
+    player.lastCombatAt = now;
+    player.nextHealthRegenAt =
+      now + PLAYER_COMBAT_TIMEOUT_MS + PLAYER_HEALTH_REGEN_INTERVAL_MS;
+  }
+
+  private regeneratePlayers(now: number): void {
+    for (const player of this.players.values()) {
+      if (!player.alive || now < player.nextHealthRegenAt) continue;
+
+      // Resolve all elapsed whole seconds in one operation. The restored
+      // amount therefore stays identical even if a server tick arrives late.
+      const elapsedTicks =
+        Math.floor(
+          (now - player.nextHealthRegenAt) / PLAYER_HEALTH_REGEN_INTERVAL_MS,
+        ) + 1;
+      player.nextHealthRegenAt += elapsedTicks * PLAYER_HEALTH_REGEN_INTERVAL_MS;
+
+      const maxHp = this.playerMaxHp(player);
+      if (player.hp >= maxHp) continue;
+      player.hp = Math.min(
+        maxHp,
+        player.hp + elapsedTicks * PLAYER_HEALTH_REGEN_PER_SECOND,
+      );
+    }
   }
 
   private addGeneralXp(player: RuntimePlayer, amount: number): void {
@@ -843,34 +1588,56 @@ export class InMemoryRealm {
     return "melee";
   }
 
-  private canAttack(from: GridPosition, to: GridPosition, range: number): boolean {
+  private canAttack(
+    from: GridPosition,
+    to: GridPosition,
+    range: number,
+    map: PublicMapDefinition,
+  ): boolean {
     return (
       manhattanDistance(from, to) <= range &&
-      (range === 1 || hasLineOfSight(STARTER_MAP, from, to))
+      (range === 1 || hasLineOfSight(map, from, to))
     );
   }
 
-  private occupiedPositions(excludedIds = new Set<string>()): ReadonlySet<string> {
+  private mapForZone(zoneId: string): PublicMapDefinition {
+    return zoneId === STARTER_MAP.id ? STARTER_MAP : RIFT_MAP;
+  }
+
+  private occupiedPositions(
+    zoneId: string,
+    excludedIds = new Set<string>(),
+  ): ReadonlySet<string> {
     const occupied = new Set<string>();
     for (const player of this.players.values()) {
-      if (!player.alive || !player.connectionId || excludedIds.has(player.id)) continue;
+      if (
+        !player.alive ||
+        !player.connectionId ||
+        player.zoneId !== zoneId ||
+        excludedIds.has(player.id)
+      ) continue;
       occupied.add(positionKey(player.position));
     }
     for (const monster of this.monsters.values()) {
-      if (!monster.alive || excludedIds.has(monster.definition.id)) continue;
+      if (
+        !monster.alive ||
+        monster.zoneId !== zoneId ||
+        excludedIds.has(monster.definition.id)
+      ) continue;
       occupied.add(positionKey(monster.position));
     }
     return occupied;
   }
 
-  private nearestOpenPosition(origin: GridPosition): GridPosition {
-    const occupied = this.occupiedPositions();
-    if (isWalkable(STARTER_MAP, origin, occupied)) return clonePosition(origin);
+  private nearestOpenPosition(origin: GridPosition, zoneId = STARTER_MAP.id): GridPosition {
+    const map = this.mapForZone(zoneId);
+    const occupied = this.occupiedPositions(zoneId);
+    if (isWalkable(map, origin, occupied)) return clonePosition(origin);
     for (let radius = 1; radius < 8; radius += 1) {
       for (let dy = -radius; dy <= radius; dy += 1) {
         for (let dx = -radius; dx <= radius; dx += 1) {
           const position = { x: origin.x + dx, y: origin.y + dy };
-          if (isWalkable(STARTER_MAP, position, occupied)) return position;
+          if (isWalkable(map, position, occupied)) return position;
         }
       }
     }
@@ -884,6 +1651,7 @@ export class InMemoryRealm {
         player.disconnectedAt !== null &&
         now - player.disconnectedAt >= DISCONNECTED_PLAYER_TTL_MS
       ) {
+        if (this.riftRuns.has(player.id)) this.abandonRift(player);
         this.players.delete(player.id);
         for (const monster of this.monsters.values()) {
           if (monster.targetId === player.id) {
@@ -1028,9 +1796,11 @@ export class InMemoryRealm {
   }
 
   private broadcastSnapshot(): void {
-    const message: ServerMessage = { type: "snapshot", snapshot: this.snapshot() };
     for (const peer of this.peers.values()) {
-      if (peer.playerId) this.safeSend(peer, message);
+      const player = peer.playerId ? this.players.get(peer.playerId) : undefined;
+      if (player) {
+        this.safeSend(peer, { type: "snapshot", snapshot: this.snapshotForPlayer(player) });
+      }
     }
   }
 

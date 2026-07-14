@@ -90,12 +90,37 @@ export interface MonsterSnapshot {
   moveIntervalMs: number;
 }
 
+export interface RiftSnapshot {
+  id: string;
+  rank: "E";
+  position: GridPosition;
+  spawnedAt: number;
+  expiresAt: number;
+  status: "open" | "boss-escaped";
+  /** True while the escaped guardian must be killed in the open world. */
+  outsideBossAlive: boolean;
+}
+
+export interface RiftRunSnapshot {
+  instanceId: string;
+  riftId: string;
+  rank: "E";
+  startedAt: number;
+  room: 1 | 2 | 3;
+  totalRooms: 3;
+  roomCleared: boolean;
+}
+
 export interface RealmSnapshot {
   zoneId: string;
+  zoneKind: "world" | "rift";
+  map: PublicMapDefinition;
   tick: number;
   serverTime: number;
   players: PlayerSnapshot[];
   monsters: MonsterSnapshot[];
+  rifts: RiftSnapshot[];
+  riftRun: RiftRunSnapshot | null;
 }
 
 export type GameEvent =
@@ -133,6 +158,32 @@ export type GameEvent =
       playerId: EntityId;
       itemId: string;
       quantity: number;
+    }
+  | {
+      type: "rift-room-cleared";
+      playerId: EntityId;
+      riftId: string;
+      room: 1 | 2 | 3;
+      nextRoom: 2 | 3 | null;
+    }
+  | {
+      type: "rift-boss-escaped";
+      riftId: string;
+      bossId: EntityId;
+    }
+  | {
+      type: "rift-outside-boss-defeated";
+      riftId: string;
+      playerId: EntityId;
+    }
+  | {
+      type: "rift-complete";
+      playerId: EntityId;
+      riftId: string;
+      rank: "E";
+      elapsedMs: number;
+      generalXp: number;
+      items: Array<{ itemId: string; quantity: number }>;
     };
 
 export type ServerMessage =

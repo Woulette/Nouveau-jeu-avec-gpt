@@ -278,26 +278,6 @@ export const STARTER_MONSTERS: readonly MonsterDefinition[] = [
     lootItemId: "croc-de-faille",
     lootChance: 0.3,
   },
-  {
-    id: "guardian-01",
-    species: "rift-guardian",
-    name: "Gardien fissuré",
-    behaviour: "aggressive",
-    spawn: { x: 54, y: 12 },
-    level: 5,
-    maxHp: 220,
-    defense: 8,
-    attackDamage: 22,
-    detectionRange: 5,
-    leashRange: 8,
-    moveIntervalMs: 520,
-    attackIntervalMs: 1_250,
-    respawnMs: 20_000,
-    xpReward: 180,
-    lootItemId: "fragment-de-faille",
-    lootChance: 1,
-    isBoss: true,
-  },
 ];
 
 const importantTiles = [

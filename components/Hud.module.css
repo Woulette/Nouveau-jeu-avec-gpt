@@ -1994,6 +1994,728 @@
   margin-top: 2px;
 }
 
+.connectionModeControl {
+  display: grid;
+  gap: 4px;
+  padding: 3px 4px 6px;
+  border-bottom: 1px solid rgba(226, 190, 112, 0.13);
+}
+
+.connectionModeControl > small {
+  color: #8f8b83;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.connectionModeControl > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px;
+}
+
+.quickMenu .connectionModeControl button {
+  min-height: 25px;
+  justify-content: center;
+  padding: 4px 3px;
+  border: 1px solid rgba(226, 190, 112, 0.1);
+  border-radius: 5px;
+  color: #908d85;
+  font-size: 7px;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.quickMenu .connectionModeControl .connectionModeActive {
+  border-color: rgba(232, 199, 124, 0.42);
+  color: #f5dda0;
+  background: rgba(213, 173, 82, 0.14);
+}
+
+/* Carte des failles : carte, journal et détail visibles sans défilement. */
+.mapPanel .panelScroller {
+  overflow: hidden;
+}
+
+.riftMapLayout {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  padding: 8px;
+  grid-template-columns: minmax(0, 1.65fr) minmax(238px, 0.85fr);
+  gap: 8px;
+  overflow: hidden;
+}
+
+.riftMapSurface,
+.riftSidebar {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid rgba(118, 184, 195, 0.24);
+  border-radius: 11px;
+  background: rgba(5, 12, 16, 0.9);
+  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.42);
+}
+
+.riftMapSurface {
+  background:
+    radial-gradient(circle at 68% 22%, rgba(83, 151, 164, 0.11), transparent 24%),
+    radial-gradient(circle at 25% 78%, rgba(205, 166, 78, 0.08), transparent 22%),
+    linear-gradient(rgba(92, 145, 154, 0.035), rgba(92, 145, 154, 0.015)),
+    #071015;
+}
+
+.mapGrid {
+  position: absolute;
+  inset: 0;
+  opacity: 0.48;
+  background-image:
+    linear-gradient(rgba(95, 155, 166, 0.13) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(95, 155, 166, 0.13) 1px, transparent 1px),
+    linear-gradient(rgba(95, 155, 166, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(95, 155, 166, 0.05) 1px, transparent 1px);
+  background-size: 50px 50px, 50px 50px, 10px 10px, 10px 10px;
+  -webkit-mask-image: radial-gradient(ellipse, #000 58%, transparent 118%);
+  mask-image: radial-gradient(ellipse, #000 58%, transparent 118%);
+}
+
+.mapRegionLabel {
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  color: rgba(159, 204, 211, 0.45);
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.playerMapMarker,
+.riftMarker {
+  position: absolute;
+  top: var(--map-y);
+  left: var(--map-x);
+  z-index: 3;
+  transform: translate(-50%, -50%);
+}
+
+.playerMapMarker {
+  display: grid;
+  justify-items: center;
+  color: #78dcb5;
+  filter: drop-shadow(0 0 6px rgba(75, 220, 166, 0.62));
+  pointer-events: none;
+}
+
+.playerMapMarker > span {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.playerMapMarker small {
+  margin-top: 2px;
+  padding: 1px 3px;
+  border-radius: 3px;
+  color: #d9f6e9;
+  font-size: 6px;
+  font-weight: 900;
+  background: rgba(6, 20, 17, 0.84);
+}
+
+.riftMarker {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  color: #8bc8e0;
+  font: inherit;
+  background:
+    radial-gradient(circle, rgba(105, 199, 223, 0.2), transparent 60%),
+    rgba(5, 12, 18, 0.9);
+  box-shadow: 0 0 12px color-mix(in srgb, currentColor 35%, transparent), inset 0 0 8px rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+}
+
+.riftMarker > span {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.riftMarker::before {
+  position: absolute;
+  inset: -6px;
+  content: "";
+}
+
+.riftMarker small {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  display: grid;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 3px;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 99px;
+  color: inherit;
+  font-size: 7px;
+  font-weight: 950;
+  background: #081014;
+}
+
+.riftMarker[data-rank="D"],
+.riftMarker[data-rank="C"] {
+  color: #79d69a;
+}
+
+.riftMarker[data-rank="B"],
+.riftMarker[data-rank="A"] {
+  color: #d6bd70;
+}
+
+.riftMarker[data-rank="S"],
+.riftMarker[data-rank="SS"],
+.riftMarker[data-rank="SSS"],
+.riftMarker[data-rank="OMEGA"],
+.riftMarker[data-rank="Ω"] {
+  color: #d985e8;
+}
+
+.riftMarkerEscaped {
+  color: #c26666 !important;
+  border-style: dashed;
+  opacity: 0.68;
+  background: rgba(35, 9, 12, 0.84);
+}
+
+.riftMarkerSelected {
+  z-index: 4;
+  outline: 2px solid rgba(255, 238, 188, 0.88);
+  outline-offset: 3px;
+  filter: brightness(1.22);
+}
+
+.mapLegend {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  display: flex;
+  gap: 8px;
+  padding: 4px 6px;
+  border: 1px solid rgba(129, 181, 189, 0.13);
+  border-radius: 6px;
+  color: #8ea5a8;
+  font-size: 6px;
+  background: rgba(4, 10, 13, 0.8);
+}
+
+.mapLegend span {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.mapLegend i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.mapLegend .legendPlayer {
+  color: #78dcb5;
+}
+
+.mapLegend .legendOpen {
+  color: #8bc8e0;
+}
+
+.mapLegend .legendEscaped {
+  color: #c26666;
+}
+
+.noRifts {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  width: 220px;
+  place-items: center;
+  color: #7c9599;
+  text-align: center;
+  transform: translate(-50%, -50%);
+}
+
+.noRifts > span {
+  margin-bottom: 5px;
+  color: #77a7ae;
+  font-size: 24px;
+}
+
+.noRifts strong {
+  color: #c5d4d2;
+  font-size: 10px;
+}
+
+.noRifts small {
+  margin-top: 4px;
+  font-size: 7px;
+}
+
+.riftSidebar {
+  display: grid;
+  grid-template-rows: 42px minmax(0, 1fr);
+  border-color: rgba(224, 190, 117, 0.16);
+  background:
+    linear-gradient(145deg, rgba(224, 190, 117, 0.035), transparent 45%),
+    rgba(8, 12, 16, 0.94);
+}
+
+.riftSidebarHeader {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 5px 6px 5px 9px;
+  border-bottom: 1px solid rgba(224, 190, 117, 0.12);
+}
+
+.riftSidebarHeader > span {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.riftSidebarHeader small {
+  color: #88857d;
+  font-size: 6px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.riftSidebarHeader strong {
+  overflow: hidden;
+  color: #e3d8bd;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.riftSidebarHeader button {
+  display: flex;
+  flex: 0 0 auto;
+  min-height: 28px;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 7px;
+  border: 1px solid rgba(224, 190, 117, 0.22);
+  border-radius: 6px;
+  color: #c8b782;
+  font: inherit;
+  font-size: 7px;
+  font-weight: 850;
+  background: rgba(255, 255, 255, 0.025);
+  cursor: pointer;
+}
+
+.riftSidebarHeader .journalButtonActive {
+  border-color: rgba(232, 199, 124, 0.5);
+  color: #f1d78e;
+  background: rgba(213, 173, 82, 0.13);
+}
+
+.riftJournal {
+  position: relative;
+  display: grid;
+  min-height: 0;
+  padding: 5px;
+  align-content: start;
+  gap: 3px;
+  overflow: hidden;
+}
+
+.journalLabels,
+.riftJournal > button {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 48px 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 4px;
+}
+
+.journalLabels {
+  height: 14px;
+  padding: 0 5px;
+  color: #77766f;
+  font-size: 5.5px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.riftJournal > button {
+  min-height: 35px;
+  padding: 4px 5px;
+  border: 1px solid rgba(224, 190, 117, 0.1);
+  border-radius: 6px;
+  color: #c8c3b8;
+  font: inherit;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.022);
+  cursor: pointer;
+}
+
+.riftJournal > button:active {
+  border-color: rgba(232, 199, 124, 0.38);
+  background: rgba(213, 173, 82, 0.09);
+}
+
+.riftJournal > button strong,
+.riftJournal > button span,
+.riftJournal > button small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.riftJournal > button strong {
+  color: #e1d6ba;
+  font-size: 7px;
+}
+
+.riftJournal > button span {
+  color: #8ea0a0;
+  font-size: 6px;
+}
+
+.riftJournal > button small {
+  color: #83c8aa;
+  font-size: 6px;
+  text-align: right;
+}
+
+.riftJournal > button .escapedText {
+  color: #cb7976;
+}
+
+.riftJournal > p {
+  align-self: center;
+  margin: 35px 8px;
+  color: #8d8a82;
+  font-size: 8px;
+  text-align: center;
+}
+
+.hiddenRifts {
+  justify-self: end;
+  color: #8c887e;
+  font-size: 6px;
+}
+
+.riftCompletionOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 75;
+  display: grid;
+  place-items: center;
+  padding: max(10px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right));
+  background: rgba(5, 7, 12, 0.76);
+  backdrop-filter: blur(5px);
+}
+
+.riftCompletionCard {
+  width: min(620px, 86vw);
+  max-height: calc(100vh - 20px);
+  overflow: hidden;
+  padding: 16px 20px;
+  text-align: center;
+  border: 1px solid rgba(190, 134, 255, 0.66);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(131, 73, 207, 0.28), transparent 48%),
+    rgba(13, 16, 24, 0.98);
+  box-shadow: 0 20px 70px rgba(0, 0, 0, 0.62), inset 0 0 28px rgba(121, 74, 183, 0.12);
+}
+
+.riftCompletionRune {
+  display: block;
+  height: 27px;
+  color: #c89bff;
+  font-size: 32px;
+  line-height: 24px;
+  text-shadow: 0 0 18px rgba(185, 126, 255, 0.9);
+}
+
+.riftCompletionCard > small {
+  color: #bfa8da;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.riftCompletionCard h2 {
+  margin: 2px 0 10px;
+  color: #f7e9c0;
+  font-family: Georgia, serif;
+  font-size: clamp(19px, 3.5vw, 28px);
+}
+
+.riftCompletionSummary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.riftCompletionSummary > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  padding: 7px 12px;
+  border: 1px solid rgba(224, 187, 105, 0.28);
+  border-radius: 10px;
+  background: rgba(7, 10, 15, 0.7);
+}
+
+.riftCompletionSummary small,
+.riftCompletionLoot > small {
+  color: #a9a39a;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.riftCompletionSummary strong {
+  color: #f2cc72;
+  font-size: 15px;
+}
+
+.riftCompletionLoot {
+  margin-top: 8px;
+  text-align: left;
+}
+
+.riftCompletionLoot > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.riftCompletionLoot span {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 38px;
+  padding: 5px 8px;
+  border: 1px solid rgba(154, 128, 186, 0.34);
+  border-radius: 9px;
+  background: rgba(8, 11, 17, 0.82);
+}
+
+.riftCompletionLoot i {
+  color: #cda4ff;
+  font-size: 18px;
+  font-style: normal;
+}
+
+.riftCompletionLoot strong {
+  overflow: hidden;
+  color: #eee4d3;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.riftCompletionLoot b {
+  color: #f2cf7b;
+  font-size: 11px;
+}
+
+.riftCompletionCard > button {
+  min-height: 38px;
+  margin-top: 10px;
+  padding: 7px 22px;
+  border: 1px solid rgba(231, 193, 108, 0.7);
+  border-radius: 10px;
+  color: #17120b;
+  font-size: 12px;
+  font-weight: 900;
+  background: linear-gradient(#f1d384, #c9973f);
+}
+
+@media (max-height: 380px) and (orientation: landscape) {
+  .riftCompletionCard {
+    padding: 9px 14px;
+  }
+
+  .riftCompletionRune {
+    height: 19px;
+    font-size: 24px;
+    line-height: 18px;
+  }
+
+  .riftCompletionCard h2 {
+    margin-bottom: 6px;
+    font-size: 18px;
+  }
+
+  .riftCompletionSummary > span,
+  .riftCompletionLoot span {
+    min-height: 34px;
+  }
+
+  .riftCompletionCard > button {
+    min-height: 32px;
+    margin-top: 6px;
+  }
+}
+
+.riftDetails {
+  position: relative;
+  display: grid;
+  min-height: 0;
+  padding: 12px;
+  align-content: start;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 8px;
+  overflow: hidden;
+}
+
+.riftDetailClose {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid rgba(224, 190, 117, 0.15);
+  border-radius: 6px;
+  color: #b8b2a4;
+  font: inherit;
+  font-size: 16px;
+  background: rgba(255, 255, 255, 0.025);
+  cursor: pointer;
+}
+
+.riftDetailIcon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid rgba(109, 190, 210, 0.4);
+  border-radius: 50%;
+  color: #86ccdf;
+  font-size: 20px;
+  background: rgba(71, 158, 180, 0.09);
+  box-shadow: 0 0 14px rgba(79, 173, 195, 0.12);
+}
+
+.riftDetailTitle {
+  display: grid;
+  align-content: center;
+  padding-right: 22px;
+}
+
+.riftDetailTitle small {
+  color: #8a8780;
+  font-size: 6px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.riftDetailTitle strong {
+  margin-top: 2px;
+  color: #f0dfae;
+  font-size: 13px;
+}
+
+.riftDetails dl {
+  display: grid;
+  margin: 2px 0 0;
+  grid-column: 1 / -1;
+  gap: 4px;
+}
+
+.riftDetails dl > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 27px;
+  padding: 4px 7px;
+  border: 1px solid rgba(224, 190, 117, 0.08);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.riftDetails dt {
+  color: #8d8a82;
+  font-size: 6.5px;
+}
+
+.riftDetails dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: #d6ceb9;
+  font-size: 7px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.riftOverview {
+  display: grid;
+  height: 100%;
+  padding: 12px;
+  place-content: center;
+  place-items: center;
+  color: #8f9c9c;
+  text-align: center;
+}
+
+.riftOverview > span {
+  margin-bottom: 5px;
+  color: #76aeb7;
+  font-size: 27px;
+}
+
+.riftOverview strong {
+  color: #d6d5cb;
+  font-size: 10px;
+}
+
+.riftOverview p {
+  max-width: 190px;
+  margin: 5px 0;
+  font-size: 7px;
+  line-height: 1.35;
+}
+
+.riftOverview small {
+  max-width: 190px;
+  color: #777a76;
+  font-size: 6px;
+  line-height: 1.35;
+}
+
 @media (max-width: 720px) and (orientation: landscape) {
   .panel {
     width: calc(100vw - 16px);

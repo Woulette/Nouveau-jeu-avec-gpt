@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { persistedPlayerProfileSchema } from "./save";
 import type { ServerMessage } from "./types";
 
 const positionSchema = z.object({
@@ -16,6 +17,7 @@ export const clientMessageSchema = z.discriminatedUnion("type", [
     name: z.string().trim().min(1).max(24),
     resumeToken: z.string().uuid().optional(),
     clientVersion: z.string().trim().max(32).optional(),
+    savedProfile: persistedPlayerProfileSchema.optional(),
   }),
   z.object({ type: z.literal("move"), destination: positionSchema, ...sequenced }),
   z.object({ type: z.literal("target"), targetId: z.string().min(1).max(80), ...sequenced }),
@@ -26,6 +28,12 @@ export const clientMessageSchema = z.discriminatedUnion("type", [
     ...sequenced,
   }),
   z.object({ type: z.literal("respawn"), ...sequenced }),
+  z.object({
+    type: z.literal("rift"),
+    action: z.enum(["enter", "leave"]),
+    riftId: z.string().min(1).max(80),
+    ...sequenced,
+  }),
   z.object({
     type: z.literal("equip"),
     itemId: z.string().min(1).max(80),

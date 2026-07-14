@@ -70,10 +70,10 @@ L'Énergie de base, et donc la progression principale des PV et des PM, augmente
 
 Corps-à-corps, Distance, Magie et Défense peuvent également progresser en étant utilisés :
 
-- attaquer au contact des ennemis valides accorde de l'XP d'entraînement de Corps-à-corps ;
-- attaquer à distance des ennemis valides accorde de l'XP d'entraînement de Distance ;
-- utiliser des attaques magiques valides accorde de l'XP d'entraînement de Magie ;
-- recevoir des dégâts valides accorde de l'XP d'entraînement de Défense ;
+- attaquer au contact et infliger réellement des dégâts accorde de l'XP d'entraînement de Corps-à-corps, quels que soient le niveau du joueur et celui du monstre ;
+- attaquer à distance et infliger réellement des dégâts accordera de l'XP d'entraînement de Distance selon la même règle, sans blocage lié au niveau de la cible ;
+- utiliser une attaque magique qui inflige réellement des dégâts accordera de l'XP d'entraînement de Magie selon la même règle ;
+- recevoir des dégâts accorde de l'XP d'entraînement de Défense, quels que soient le niveau du joueur et celui du monstre ;
 - lorsque la jauge d'une statistique est remplie, son niveau d'entraînement augmente et accorde +1 supplémentaire à cette statistique.
 
 Chaque statistique entraînable possède donc deux composantes distinctes :
@@ -102,9 +102,11 @@ Exemple : si le Corps-à-corps entraîné possède 70/100 XP et que le personnag
 
 Les courbes d'XP générale et de chaque entraînement seront calculées séparément.
 
-### Protection contre l'entraînement artificiel
+### Entraînement sans pénalité de niveau et protection future
 
-Les conditions exactes restent à équilibrer, mais l'entraînement devra seulement compter lors de combats valides. Il faudra empêcher qu'un joueur améliore une maîtrise offensive en frappant sans risque un ennemi beaucoup trop faible ou sa Défense en restant volontairement sous les attaques d'une créature inoffensive. Les règles anti-abus seront définies avec le système de combat.
+Une créature de niveau inférieur continue volontairement à faire progresser les maîtrises : aucune comparaison de niveau ne supprime l'XP de Corps-à-corps, Distance, Magie ou Défense. Cette règle permet au joueur d'entraîner longtemps la statistique réellement utilisée sans que l'ancien contenu devienne totalement inutile.
+
+Les protections futures contre l'automatisation ne devront donc pas reposer sur le niveau du monstre. Elles pourront contrôler la réalité des dégâts, la cadence maximale des actions, l'activité du joueur et les comportements répétitifs anormaux, sans retirer l'XP d'un combat normal contre une cible faible.
 
 ### Rangs officiels et indice de puissance
 
@@ -219,7 +221,7 @@ L'inventaire et l'équipement appartiennent au joueur autoritaire de la zone :
 - les bonus portés modifient réellement les dégâts, la Défense, l'Énergie, les PV, les PM et l'indice de puissance ;
 - les objets restent présents lors d'une reconnexion au même serveur de zone.
 
-Cette autorité est actuellement conservée en mémoire avec le personnage. La persistance durable entre redéploiements fera partie de l'étape consacrée aux comptes et à la base de données.
+Cette autorité est conservée par le serveur de zone pendant la session. Le prototype possède en plus une sauvegarde locale versionnée du personnage dans le navigateur : niveau, XP générale, maîtrises, PV, PM, position extérieure, inventaire et équipement. Elle permet de reprendre la progression sur le même appareil en mode local ou hors ligne. Un garde anti-régression empêche qu'un personnage en ligne recréé au niveau 1 après la perte d'un serveur en mémoire écrase silencieusement une sauvegarde locale plus avancée. Une sauvegarde MMO sécurisée, partagée entre appareils et résistante aux redéploiements nécessitera toujours un compte et une base de données serveur.
 
 ### Accès aux failles
 
@@ -233,6 +235,38 @@ Un joueur E peut tenter une faille D ou supérieure à ses risques et périls. L
 - un avertissement lorsque le danger est très supérieur à ses capacités.
 
 Les récompenses nécessitent une participation réelle afin d'éviter qu'un joueur trop faible soit récompensé en restant inactif dans un groupe.
+
+### Cycle des failles dynamiques
+
+- Des portails apparaissent périodiquement à plusieurs emplacements possibles du monde. La première zone conserve toujours une faille E immédiatement disponible pour les essais ; les apparitions suivantes utilisent provisoirement un intervalle aléatoire de 15 à 45 minutes et un maximum de trois failles simultanées.
+- Une faille reste ouverte pendant **24 heures réelles** à partir de son apparition.
+- Si elle n'est pas fermée avant l'échéance, son Gardien sort dans le monde ouvert, devient agressif et attaque les joueurs proches.
+- Dans ce cas, le Gardien extérieur doit d'abord être vaincu, puis l'intérieur de la faille doit encore être terminé pour la refermer définitivement.
+- Si l'échéance survient pendant une instance, le joueur est renvoyé dans le monde ouvert. Le serveur refuse également toute fermeture tardive tant que le Gardien extérieur est vivant : terminer l'intérieur ne peut jamais le supprimer ni contourner cette étape.
+- Une faille terminée disparaît immédiatement. Elle n'entre dans aucun temps de recharge d'une heure et ne peut pas être relancée ; une nouvelle faille apparaîtra plus tard à un emplacement disponible.
+- En mode local ou hors ligne, le cycle est sauvegardé séparément et de façon versionnée : identifiants, positions, dates d'apparition et d'expiration, prochaine apparition planifiée ainsi que position et PV d'un Gardien échappé. Fermer puis rouvrir le jeu ne remet donc pas les 24 heures à zéro.
+- Le monde partagé en ligne utilise encore un royaume en mémoire dans cette tranche. Ses failles restent cohérentes tant que ce royaume vit, mais une persistance réelle après redémarrage ou redéploiement attend la base de données MMO.
+
+### Première faille E jouable
+
+La première instance de faille est individuelle dans le prototype et contient trois salles reliées :
+
+1. une première vague de créatures distordues ;
+2. une deuxième vague plus dangereuse ;
+3. le Gardien de la Brèche.
+
+Chaque salle verrouille la progression vers la suivante tant que ses monstres sont vivants. Après une vague, le joueur avance physiquement dans le couloir jusqu'à la salle suivante. Vaincre le Gardien ferme le portail, ramène automatiquement le personnage dans le monde ouvert et ouvre une fenêtre récapitulative indiquant :
+
+- « Portail rang E terminé » ;
+- l'XP générale totale gagnée dans le portail, bonus final compris ;
+- les équipements et ressources récupérés ;
+- le temps total passé à l'intérieur.
+
+La récompense garantie de test comprend actuellement trois Poussières dimensionnelles et une Lame-croc de faille, en plus du butin réellement obtenu sur les créatures. Ces valeurs restent équilibrables.
+
+### Carte et journal des failles
+
+Le menu compact possède une entrée **Carte des failles** séparée de l'Inventaire et des Statistiques. Cette vue paysage montre la position extérieure du joueur et chaque portail actif. Toucher un marqueur affiche son rang, sa position, son âge, son temps restant et son état. Un bouton **Journal** liste les portails détectés et signale clairement les failles dont le boss s'est échappé.
 
 ## 3. Début du jeu
 
@@ -336,13 +370,20 @@ Les distances de détection, de poursuite, d'abandon et d'attaque devront être 
 - Les quatre emplacements sont placés en bas et au centre de l'écran.
 - La barre doit rester compacte afin de préserver la visibilité du monde sur mobile.
 
+### Régénération hors combat
+
+- Un personnage vivant récupère **2 PV par seconde complète hors combat**, sans dépasser ses PV maximums.
+- Donner ou recevoir une attaque remet immédiatement le délai hors combat à zéro.
+- Le personnage est considéré hors combat après cinq secondes sans attaque donnée ni reçue ; le premier soin de +2 arrive après la première seconde complète suivante, soit six secondes après le dernier impact.
+- Un personnage mort ne se régénère jamais. Sa régénération reprend normalement après sa réapparition.
+
 ### Orientation et interface
 
 - Le jeu se joue **uniquement en paysage** à compter de cette décision.
 - En portrait, un écran simple demande au joueur de tourner son téléphone ; les commandes de jeu et les panneaux ne doivent pas être utilisables tant que l'appareil n'est pas revenu en paysage.
 - Le passage portrait-paysage doit restaurer immédiatement un canvas à la taille exacte du nouvel écran, sans étirement ni conservation d'une mauvaise taille.
 - L'interface doit utiliser le moins d'espace permanent possible.
-- Le menu compact propose des entrées distinctes. **Inventaire** ouvre la fenêtre combinée Inventaire + Équipement ; **Statistiques** ouvre uniquement les statistiques.
+- Le menu compact propose des entrées distinctes. **Inventaire** ouvre la fenêtre combinée Inventaire + Équipement ; **Statistiques** ouvre uniquement les statistiques ; **Carte des failles** ouvre la carte et son journal.
 - Une fenêtre ne contient pas les onglets permettant de basculer vers l'autre : le joueur ferme la fenêtre actuelle puis choisit lui-même une autre entrée du menu.
 - Les panneaux secondaires doivent pouvoir se refermer rapidement et ne pas masquer inutilement le combat.
 - La fenêtre Inventaire + Équipement place le mannequin et ses six slots à gauche, puis la grille filtrable et la fiche de l'objet sélectionné à droite.
@@ -365,9 +406,12 @@ Le multijoueur fait partie de la fondation du projet et non d'une conversion pr�
 - le serveur de zone valide les positions, les combats, les dégâts, les monstres, l'XP, le butin, l'inventaire et l'équipement, puis diffuse des instantanés du monde ;
 - les monstres appartiennent au monde partagé : leur position, leur comportement et leurs PV doivent être cohérents entre les joueurs ;
 - la première tranche peut utiliser un serveur de zone en mémoire pour valider rapidement les sensations de jeu ;
-- si la connexion au monde partagé échoue, une simulation locale permet tout de même de tester le déplacement, le ciblage, le combat et l'interface depuis Vercel.
+- si la connexion au monde partagé échoue, une simulation locale permet tout de même de tester le déplacement, le ciblage, le combat, les failles et l'interface depuis Vercel ;
+- le menu permet aussi de choisir volontairement **En ligne** ou **Hors ligne**. En hors ligne, le moteur local démarre immédiatement et n'attend aucun serveur de monde.
 
-Cette solution locale est un filet de test, pas le mode MMO final. La persistance durable des personnages, l'authentification, la reprise après redémarrage, la communication entre plusieurs instances serveur et la protection renforcée contre la triche nécessiteront ensuite une base de données et une infrastructure partagée.
+Après une première visite en ligne complète, l'application attend que son cache signale qu'il est prêt après avoir préchargé l'interface et tous les fichiers statiques nécessaires au moteur local. Elle peut alors être rouverte sans réseau sur le même navigateur. La sauvegarde locale est versionnée, vérifiée avant chargement, protégée contre les retours accidentels de progression et enregistrée régulièrement ainsi qu'à la fermeture de la page. Une partie interrompue au milieu d'une faille reprend volontairement depuis le dernier état extérieur sûr ; l'instance en cours n'est pas restaurée dans cette première version, mais le portail extérieur et son échéance continuent d'exister.
+
+Cette solution locale est un mode de jeu et de test sur l'appareil, pas le mode MMO final. La sauvegarde navigateur n'est ni une autorité anti-triche ni une synchronisation entre téléphones. La persistance MMO durable, l'authentification, la reprise après redémarrage, la communication entre plusieurs instances serveur et la protection renforcée contre la triche nécessiteront une base de données et une infrastructure partagée.
 
 ### Contraintes de synchronisation
 
@@ -392,8 +436,10 @@ La première tranche a pour objectif de permettre, sur téléphone comme sur ord
 7. de gagner de l'XP générale et de l'XP d'entraînement séparées ;
 8. de recevoir du butin, de l'ajouter à l'inventaire et d'équiper les objets compatibles ;
 9. de consulter la fenêtre combinée Inventaire + Équipement et la fenêtre séparée Statistiques, toutes deux sans défilement structurel inutile ;
-10. d'affronter un boss et de repérer ou d'ouvrir une première faille ;
-11. de voir au minimum les déplacements des autres joueurs présents dans la même zone lorsque le serveur MMO est disponible.
+10. d'ouvrir la carte, consulter le journal et entrer dans une faille E dynamique ;
+11. de traverser ses trois salles, vaincre le Gardien et recevoir le bilan complet du portail ;
+12. de continuer à jouer en mode hors ligne et de retrouver sa sauvegarde locale sur le même appareil ;
+13. de voir au minimum les déplacements des autres joueurs présents dans la même zone lorsque le serveur MMO est disponible.
 
 Dans cette tranche, les quatre emplacements de compétence sont visibles mais verrouillés pour l'Aventurier. À partir du niveau 10, l'éveil au QG attribue le rang E et permet le choix permanent de voie.
 
@@ -408,6 +454,8 @@ Dans cette tranche, les quatre emplacements de compétence sont visibles mais ve
 - PV, PM, niveau, XP, butin, inventaire, équipement et statistiques ;
 - interface mobile compacte exclusivement en paysage, avec invitation à tourner l'appareil en portrait ;
 - première synchronisation multijoueur et mode de test local ;
+- sauvegarde locale versionnée, sélection en ligne/hors ligne et cache de l'application ;
+- cycle de failles dynamiques E, carte, journal, trois salles, boss échappé et fenêtre de récompenses ;
 - sauvegardes régulières du code sur GitHub et version testable sur Vercel.
 
 ### Étape 2 — Éveil au QG et progression classée
@@ -417,7 +465,7 @@ Dans cette tranche, les quatre emplacements de compétence sont visibles mais ve
 - présentation et confirmation du choix irréversible Épéiste, Archer ou Magicien ;
 - conversion de l'entraînement provisoire de l'Aventurier et attribution des 25 points ;
 - premières compétences actives, portée propre à chaque voie, mana et temps de recharge ;
-- premier équipement D et première boucle complète de faille.
+- premier équipement D et équilibrage de la boucle de faille E déjà jouable.
 
 ### Étape 3 — Monde persistant
 
@@ -442,19 +490,21 @@ Les fondations sont suffisamment définies pour construire et tester. Les sujets
 
 1. les formules exactes transformant les six statistiques en PV, PM, dégâts, réduction, vitesse de déplacement et indice de puissance ;
 2. les courbes séparées d'XP générale et de chaque maîtrise entraînée ;
-3. les règles précises contre l'entraînement artificiel ou automatique abusif ;
+3. les règles précises contre l'entraînement artificiel ou automatique abusif, sans supprimer l'XP selon le niveau de la cible ;
 4. les niveaux minimums et indices de puissance correspondant aux rangs D à Oméga ;
 5. les récompenses non statistiques de chaque rang : titres, coffres, contrats et effets visuels ;
 6. les compétences et bonus passifs détaillés de chaque classe, du rang D au rang S ;
 7. l'épreuve narrative permettant de choisir sa première voie ;
 8. les détails des Ascensions SS, SSS et Oméga ;
-9. le rythme exact des trente premières minutes et l'équilibrage de l'interface paysage sur les différents formats de téléphone.
+9. le rythme exact des trente premières minutes et l'équilibrage de l'interface paysage sur les différents formats de téléphone ;
+10. le nombre simultané, la fréquence d'apparition, la difficulté et les tables de récompenses finales des failles de chaque rang.
 
 ## 11. État du projet
 
 - Phase actuelle : première tranche jouable en cours d'implémentation.
-- État du 14 juillet 2026 : nouvelle refonte demandée pour séparer la fenêtre Statistiques de la fenêtre combinée Inventaire + Équipement, imposer le paysage, rendre les Slimes défensifs et introduire l'éveil au QG au niveau 10 avant tout rang.
-- Les fondations validées sont le déplacement tactile sur cases, le combat automatique à portée, les six statistiques dont la Vitesse, l'Aventurier sans rang avant son éveil, les rangs liés à la puissance et au niveau minimum après l'éveil, les trois voies permanentes, l'interface mobile compacte en paysage et l'intégration MMO progressive.
+- État du 14 juillet 2026 : la refonte paysage Inventaire/Statistiques est active ; les Slimes ripostent ; le personnage reste non classé avant le futur éveil au QG ; la régénération hors combat, l'XP de maîtrise sans pénalité de niveau, la sauvegarde locale protégée et le mode hors ligne préchargé sont intégrés.
+- La première faille E est désormais une instance jouable de trois salles. Les portails apparaissent dynamiquement, expirent après 24 heures, libèrent leur boss dans le monde s'ils sont ignorés, apparaissent sur une carte avec journal et disparaissent définitivement lorsqu'ils sont fermés. Leur cycle et les Gardiens échappés survivent aux redémarrages locaux ; le monde en ligne attend encore sa base de données persistante.
+- Les fondations validées sont le déplacement tactile sur cases, le combat automatique à portée, les six statistiques dont la Vitesse, l'Aventurier sans rang avant son éveil, les rangs liés à la puissance et au niveau minimum après l'éveil, les trois voies permanentes, l'interface mobile compacte en paysage, les failles dynamiques et l'intégration MMO progressive avec solution hors ligne locale.
 - Les valeurs d'équilibrage provisoires peuvent être modifiées après les essais sans changer ces fondations.
 - Chaque version stable doit être enregistrée sur GitHub et rendue testable sur Vercel afin que le projet reste accessible depuis mobile.
 - Ce document reste la référence centrale et doit être actualisé après chaque décision majeure.

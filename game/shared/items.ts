@@ -165,6 +165,15 @@ const itemCatalog = {
     requiredRank: "D",
     bonuses: { melee: 12 },
   },
+  "poussiere-dimensionnelle": {
+    id: "poussiere-dimensionnelle",
+    name: "Poussière dimensionnelle",
+    icon: "✦",
+    description: "Une ressource stable récupérée après la fermeture d’une faille de rang E.",
+    kind: "material",
+    category: "resource",
+    rarity: "rare",
+  },
 } as const satisfies Readonly<Record<string, ItemDefinition>>;
 
 export type ItemId = keyof typeof itemCatalog;
@@ -183,6 +192,7 @@ export const STARTER_INVENTORY: Readonly<Record<ItemId, number>> = {
   "defense-de-sanglier": 0,
   "croc-de-faille": 0,
   "fragment-de-faille": 0,
+  "poussiere-dimensionnelle": 0,
 };
 
 const RANK_INDEX: Readonly<Record<PlayerRank, number>> = {

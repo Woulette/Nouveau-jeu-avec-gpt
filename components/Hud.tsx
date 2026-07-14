@@ -12,8 +12,30 @@ import {
 import styles from "./Hud.module.css";
 
 export type HudConnectionStatus = "connected" | "connecting" | "local" | "offline";
-export type HudPanel = "inventory" | "equipment" | "stats" | null;
+export type HudConnectionMode = "online" | "offline";
+export type HudPanel = "inventory" | "equipment" | "stats" | "map" | null;
 export type HudItemRarity = "common" | "uncommon" | "rare" | "epic" | "legendary";
+
+export interface HudMapPosition {
+  x: number;
+  y: number;
+}
+
+export interface HudMapSize {
+  width: number;
+  height: number;
+}
+
+export interface HudRift {
+  id: string;
+  rank: string;
+  x: number;
+  y: number;
+  spawnedAt: number;
+  expiresAt: number;
+  status: "open" | "boss-escaped";
+  outsideBossAlive?: boolean;
+}
 
 export interface HudSkillSlot {
   id: string;
@@ -59,6 +81,14 @@ export interface HudReward {
   rarity?: HudItemRarity;
 }
 
+export interface HudRiftCompletion {
+  riftId: string;
+  rank: string;
+  elapsedMs: number;
+  generalXp: number;
+  items: HudReward[];
+}
+
 export interface HudStatBreakdown {
   id: string;
   label: string;
@@ -90,7 +120,12 @@ export interface HudProps {
   equipment?: HudEquipmentSlot[];
   stats?: HudStatBreakdown[];
   rewards?: HudReward[];
+  riftCompletion?: HudRiftCompletion | null;
+  rifts?: HudRift[];
+  playerMapPosition?: HudMapPosition;
+  mapSize?: HudMapSize;
   alive?: boolean;
+  preferredConnectionMode?: HudConnectionMode;
   activePanel?: HudPanel;
   onPanelChange?: (panel: HudPanel) => void;
   onPanelClose?: (panel: Exclude<HudPanel, null>) => void;
@@ -98,6 +133,8 @@ export interface HudProps {
   onUnequip?: (slotId: string) => void;
   onSkillActivate?: (skillId: string) => void;
   onRespawn?: () => void;
+  onConnectionModeChange?: (mode: HudConnectionMode) => void;
+  onDismissRiftCompletion?: () => void;
 }
 
 type MeterTone = "health" | "mana" | "xp";
@@ -106,11 +143,13 @@ const PANEL_LABELS: Record<Exclude<HudPanel, null>, string> = {
   inventory: "Inventaire & équipement",
   equipment: "Équipement",
   stats: "Statistiques",
+  map: "Carte des failles",
 };
 
-const QUICK_PANELS: ReadonlyArray<{ id: "inventory" | "stats"; label: string; icon: string }> = [
+const QUICK_PANELS: ReadonlyArray<{ id: "inventory" | "stats" | "map"; label: string; icon: string }> = [
   { id: "inventory", label: "Inventaire", icon: "◇" },
   { id: "stats", label: "Statistiques", icon: "✦" },
+  { id: "map", label: "Carte des failles", icon: "⌖" },
 ];
 
 const CONNECTION_LABELS: Record<HudConnectionStatus, string> = {
@@ -559,6 +598,187 @@ function StatsPanel({ stats, rank, level }: { stats: HudStatBreakdown[]; rank: s
   );
 }
 
+function formatRiftDuration(milliseconds: number) {
+  if (!Number.isFinite(milliseconds)) return "--";
+  const seconds = Math.max(0, Math.floor(milliseconds / 1_000));
+  if (seconds < 60) return `${seconds} s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} min ${seconds % 60} s`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours} h ${minutes % 60} min`;
+}
+
+function RiftMapPanel({
+  rifts,
+  playerPosition,
+  mapSize,
+}: {
+  rifts: HudRift[];
+  playerPosition: HudMapPosition;
+  mapSize: HudMapSize;
+}) {
+  const [selectedRiftId, setSelectedRiftId] = useState<string | null>(null);
+  const [journalOpen, setJournalOpen] = useState(false);
+  const [now, setNow] = useState<number | null>(null);
+
+  useEffect(() => {
+    const initialTimer = window.setTimeout(() => setNow(Date.now()), 0);
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  const selectedRift = rifts.find((rift) => rift.id === selectedRiftId) ?? null;
+  const orderedRifts = [...rifts].sort((left, right) => {
+    if (left.status !== right.status) return left.status === "open" ? -1 : 1;
+    return left.expiresAt - right.expiresAt;
+  });
+  const journalRifts = orderedRifts.slice(0, 5);
+  const hiddenRiftCount = Math.max(0, orderedRifts.length - journalRifts.length);
+  const safeMapWidth = Math.max(1, mapSize.width);
+  const safeMapHeight = Math.max(1, mapSize.height);
+  const openCount = rifts.filter((rift) => rift.status === "open").length;
+  const playerStyle = {
+    "--map-x": `${4 + clampRatio(playerPosition.x, safeMapWidth) * 92}%`,
+    "--map-y": `${6 + clampRatio(playerPosition.y, safeMapHeight) * 88}%`,
+  } as CSSProperties;
+
+  function selectRift(riftId: string) {
+    setSelectedRiftId(riftId);
+    setJournalOpen(false);
+  }
+
+  function riftTiming(rift: HudRift) {
+    if (rift.status === "boss-escaped") {
+      return rift.outsideBossAlive === false ? "Boss vaincu · à fermer" : "Boss échappé";
+    }
+    if (now === null) return "Calcul…";
+    return `${formatRiftDuration(rift.expiresAt - now)} restante`;
+  }
+
+  return (
+    <div className={styles.riftMapLayout}>
+      <section className={styles.riftMapSurface} aria-label="Carte des failles actives">
+        <div className={styles.mapGrid} aria-hidden="true" />
+        <span className={styles.mapRegionLabel}>Région connue</span>
+        <span className={styles.playerMapMarker} style={playerStyle} aria-label="Votre position">
+          <span aria-hidden="true">▲</span>
+          <small>Vous</small>
+        </span>
+        {rifts.map((rift) => {
+          const markerStyle = {
+            "--map-x": `${4 + clampRatio(rift.x, safeMapWidth) * 92}%`,
+            "--map-y": `${6 + clampRatio(rift.y, safeMapHeight) * 88}%`,
+          } as CSSProperties;
+          const escaped = rift.status === "boss-escaped";
+          return (
+            <button
+              type="button"
+              className={`${styles.riftMarker} ${escaped ? styles.riftMarkerEscaped : ""} ${
+                selectedRift?.id === rift.id ? styles.riftMarkerSelected : ""
+              }`}
+              data-rank={rift.rank.toUpperCase()}
+              style={markerStyle}
+              key={rift.id}
+              aria-label={`Faille rang ${rift.rank}, ${riftTiming(rift)}`}
+              aria-pressed={selectedRift?.id === rift.id}
+              onClick={() => selectRift(rift.id)}
+            >
+              <span aria-hidden="true">{escaped ? "×" : "◇"}</span>
+              <small>{rift.rank}</small>
+            </button>
+          );
+        })}
+        {!rifts.length ? (
+          <div className={styles.noRifts}>
+            <span aria-hidden="true">◇</span>
+            <strong>Aucune faille détectée</strong>
+            <small>Le journal se mettra à jour dès qu’une faille apparaîtra.</small>
+          </div>
+        ) : null}
+        <div className={styles.mapLegend} aria-label="Légende">
+          <span><i className={styles.legendPlayer} /> Joueur</span>
+          <span><i className={styles.legendOpen} /> Ouverte</span>
+          <span><i className={styles.legendEscaped} /> Échappé</span>
+        </div>
+      </section>
+
+      <aside className={styles.riftSidebar} aria-label="Informations des failles">
+        <header className={styles.riftSidebarHeader}>
+          <span><small>Détections</small><strong>{openCount} ouverte{openCount > 1 ? "s" : ""}</strong></span>
+          <button
+            type="button"
+            className={journalOpen ? styles.journalButtonActive : ""}
+            aria-pressed={journalOpen}
+            onClick={() => {
+              setJournalOpen((isOpen) => !isOpen);
+              setSelectedRiftId(null);
+            }}
+          >
+            <span aria-hidden="true">☷</span> Journal
+          </button>
+        </header>
+
+        {journalOpen ? (
+          <div className={styles.riftJournal}>
+            <div className={styles.journalLabels} aria-hidden="true">
+              <span>Faille</span><span>Âge</span><span>État</span>
+            </div>
+            {journalRifts.map((rift) => (
+              <button type="button" key={rift.id} onClick={() => selectRift(rift.id)}>
+                <strong>Rang {rift.rank}</strong>
+                <span>{now === null ? "--" : formatRiftDuration(now - rift.spawnedAt)}</span>
+                <small className={rift.status === "boss-escaped" ? styles.escapedText : ""}>
+                  {riftTiming(rift)}
+                </small>
+              </button>
+            ))}
+            {!journalRifts.length ? <p>Aucune entrée dans le journal.</p> : null}
+            {hiddenRiftCount ? <small className={styles.hiddenRifts}>+{hiddenRiftCount} autre{hiddenRiftCount > 1 ? "s" : ""}</small> : null}
+          </div>
+        ) : selectedRift ? (
+          <article className={styles.riftDetails}>
+            <button
+              type="button"
+              className={styles.riftDetailClose}
+              onClick={() => setSelectedRiftId(null)}
+              aria-label="Fermer le détail de la faille"
+            >×</button>
+            <span className={styles.riftDetailIcon} aria-hidden="true">
+              {selectedRift.status === "boss-escaped" ? "×" : "◇"}
+            </span>
+            <div className={styles.riftDetailTitle}>
+              <small>Faille détectée</small>
+              <strong>Rang {selectedRift.rank}</strong>
+            </div>
+            <dl>
+              <div><dt>État</dt><dd>{
+                selectedRift.status === "open"
+                  ? "Ouverte"
+                  : selectedRift.outsideBossAlive === false
+                    ? "Boss vaincu · intérieur à fermer"
+                    : "Boss échappé"
+              }</dd></div>
+              <div><dt>Apparue il y a</dt><dd>{now === null ? "--" : formatRiftDuration(now - selectedRift.spawnedAt)}</dd></div>
+              <div><dt>Temps restant</dt><dd>{riftTiming(selectedRift)}</dd></div>
+              <div><dt>Position</dt><dd>{Math.round(selectedRift.x)} · {Math.round(selectedRift.y)}</dd></div>
+            </dl>
+          </article>
+        ) : (
+          <div className={styles.riftOverview}>
+            <span aria-hidden="true">⌖</span>
+            <strong>Sélectionnez une faille</strong>
+            <p>Touchez un marqueur pour voir son rang, son âge et le temps restant.</p>
+            <small>Le journal conserve aussi les boss ayant réussi à s’échapper.</small>
+          </div>
+        )}
+      </aside>
+    </div>
+  );
+}
+
 export default function Hud({
   hp,
   maxHp,
@@ -577,7 +797,12 @@ export default function Hud({
   equipment = [],
   stats = [],
   rewards = [],
+  riftCompletion = null,
+  rifts = [],
+  playerMapPosition = { x: 0, y: 0 },
+  mapSize = { width: 100, height: 100 },
   alive = true,
+  preferredConnectionMode,
   activePanel,
   onPanelChange,
   onPanelClose,
@@ -585,11 +810,17 @@ export default function Hud({
   onUnequip,
   onSkillActivate,
   onRespawn,
+  onConnectionModeChange,
+  onDismissRiftCompletion,
 }: HudProps) {
   const [internalPanel, setInternalPanel] = useState<HudPanel>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [internalConnectionMode, setInternalConnectionMode] = useState<HudConnectionMode>(() =>
+    preferredConnectionMode ?? (connectionStatus === "local" || connectionStatus === "offline" ? "offline" : "online"),
+  );
   const panel = activePanel === undefined ? internalPanel : activePanel;
   const displayedPanel = panel === "equipment" ? "inventory" : panel;
+  const selectedConnectionMode = preferredConnectionMode ?? internalConnectionMode;
 
   const visibleSkillSlots = useMemo(
     () =>
@@ -608,6 +839,11 @@ export default function Hud({
     }
     setMenuOpen(false);
     onPanelChange?.(nextPanel);
+  }
+
+  function selectConnectionMode(mode: HudConnectionMode) {
+    setInternalConnectionMode(mode);
+    onConnectionModeChange?.(mode);
   }
 
   function closePanel() {
@@ -718,6 +954,23 @@ export default function Hud({
       <HudSurface className={styles.menuDock}>
         {menuOpen ? (
           <nav className={styles.quickMenu} aria-label="Menu du personnage">
+            <div className={styles.connectionModeControl} role="group" aria-label="Mode de connexion préféré">
+              <small>Connexion</small>
+              <div>
+                <button
+                  type="button"
+                  className={selectedConnectionMode === "online" ? styles.connectionModeActive : ""}
+                  aria-pressed={selectedConnectionMode === "online"}
+                  onClick={() => selectConnectionMode("online")}
+                >En ligne</button>
+                <button
+                  type="button"
+                  className={selectedConnectionMode === "offline" ? styles.connectionModeActive : ""}
+                  aria-pressed={selectedConnectionMode === "offline"}
+                  onClick={() => selectConnectionMode("offline")}
+                >Hors ligne</button>
+              </div>
+            </div>
             {QUICK_PANELS.map((entry) => (
               <button type="button" key={entry.id} onClick={() => selectPanel(entry.id)}>
                 <span aria-hidden="true">{entry.icon}</span>
@@ -742,11 +995,17 @@ export default function Hud({
 
       {panel ? (
         <HudSurface
-          className={`${styles.panel} ${displayedPanel === "stats" ? styles.statsPanel : styles.inventoryPanel}`}
+          className={`${styles.panel} ${
+            displayedPanel === "stats"
+              ? styles.statsPanel
+              : displayedPanel === "map"
+                ? styles.mapPanel
+                : styles.inventoryPanel
+          }`}
         >
           <header className={styles.panelHeader}>
             <div>
-              <span className={styles.panelEyebrow}>Personnage</span>
+              <span className={styles.panelEyebrow}>{displayedPanel === "map" ? "Exploration" : "Personnage"}</span>
               <h2>{displayedPanel ? PANEL_LABELS[displayedPanel] : "Personnage"}</h2>
             </div>
             <button type="button" className={styles.closeButton} onClick={closePanel} aria-label="Fermer le panneau">
@@ -765,7 +1024,42 @@ export default function Hud({
               />
             ) : null}
             {displayedPanel === "stats" ? <StatsPanel stats={stats} rank={rank} level={level} /> : null}
+            {displayedPanel === "map" ? (
+              <RiftMapPanel rifts={rifts} playerPosition={playerMapPosition} mapSize={mapSize} />
+            ) : null}
           </div>
+        </HudSurface>
+      ) : null}
+
+      {riftCompletion ? (
+        <HudSurface className={styles.riftCompletionOverlay}>
+          <section
+            className={styles.riftCompletionCard}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="rift-completion-title"
+          >
+            <span className={styles.riftCompletionRune} aria-hidden="true">◇</span>
+            <small>Brèche stabilisée</small>
+            <h2 id="rift-completion-title">Portail rang {riftCompletion.rank} terminé</h2>
+            <div className={styles.riftCompletionSummary}>
+              <span><small>XP du portail</small><strong>+{formatCompact(riftCompletion.generalXp)}</strong></span>
+              <span><small>Temps passé</small><strong>{formatRiftDuration(riftCompletion.elapsedMs)}</strong></span>
+            </div>
+            <div className={styles.riftCompletionLoot}>
+              <small>Récompenses récupérées</small>
+              <div>
+                {riftCompletion.items.map((item) => (
+                  <span key={item.id} className={styles[`rarity_${item.rarity ?? "common"}`]}>
+                    <i aria-hidden="true">{item.icon}</i>
+                    <strong>{item.name}</strong>
+                    <b>×{item.quantity ?? 1}</b>
+                  </span>
+                ))}
+              </div>
+            </div>
+            <button type="button" onClick={onDismissRiftCompletion}>Continuer l’aventure</button>
+          </section>
         </HudSurface>
       ) : null}
 

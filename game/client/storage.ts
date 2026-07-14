@@ -1,57 +1,73 @@
-import type { HudState } from "./events";
+import {
+  CONNECTION_MODE_STORAGE_KEY,
+  PLAYER_SAVE_STORAGE_KEY,
+  PLAYER_SAVE_VERSION,
+  localPlayerSaveSchema,
+  persistedPlayerProfileSchema,
+  isProfileProgressRegression,
+  profileFromPlayerSnapshot,
+  type LocalPlayerSave,
+  type PersistedPlayerProfile,
+  type PreferredConnectionMode,
+} from "../shared/save";
+import type { PlayerSnapshot } from "../shared/types";
 
-const SAVE_KEY = "nouveau-mmo-rpg-save-v1";
-
-export interface LocalSave {
-  playerId: string;
-  name: string;
-  tileX: number;
-  tileY: number;
-  hud: Pick<
-    HudState,
-    "hp" | "maxHp" | "mp" | "maxMp" | "xp" | "xpNeeded" | "level" | "rank" | "inventory" | "equipment" | "stats"
-  >;
-}
-
-function randomId() {
-  return "p-" + crypto.randomUUID().slice(0, 8);
-}
-
-export function loadSave(): LocalSave | null {
+export function loadPlayerSave(): LocalPlayerSave | null {
   try {
-    const raw = window.localStorage.getItem(SAVE_KEY);
-    return raw ? (JSON.parse(raw) as LocalSave) : null;
+    const raw = window.localStorage.getItem(PLAYER_SAVE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = localPlayerSaveSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : null;
   } catch {
     return null;
   }
 }
 
-export function createSave(hud: HudState): LocalSave {
-  return {
-    playerId: randomId(),
-    name: "Aventurier-" + Math.floor(100 + Math.random() * 900),
-    tileX: 10,
-    tileY: 15,
-    hud: {
-      hp: hud.hp,
-      maxHp: hud.maxHp,
-      mp: hud.mp,
-      maxMp: hud.maxMp,
-      xp: hud.xp,
-      xpNeeded: hud.xpNeeded,
-      level: hud.level,
-      rank: hud.rank,
-      inventory: hud.inventory,
-      equipment: hud.equipment,
-      stats: hud.stats,
-    },
-  };
+export function loadSavedProfile(): PersistedPlayerProfile | undefined {
+  return loadPlayerSave()?.profile;
 }
 
-export function saveLocal(save: LocalSave) {
+export function savePlayerSnapshot(player: PlayerSnapshot, savedAt = Date.now()): boolean {
+  return savePlayerProfile(profileFromPlayerSnapshot(player), savedAt);
+}
+
+export function savePlayerProfile(profile: PersistedPlayerProfile, savedAt = Date.now()): boolean {
   try {
-    window.localStorage.setItem(SAVE_KEY, JSON.stringify(save));
+    const validatedProfile = persistedPlayerProfileSchema.parse(profile);
+    const previous = loadPlayerSave();
+    if (previous && isProfileProgressRegression(validatedProfile, previous.profile)) {
+      return false;
+    }
+    const save = localPlayerSaveSchema.parse({
+      version: PLAYER_SAVE_VERSION,
+      savedAt,
+      profile: validatedProfile,
+    });
+    window.localStorage.setItem(
+      PLAYER_SAVE_STORAGE_KEY,
+      JSON.stringify(save),
+    );
+    return true;
   } catch {
-    // The game remains playable when storage is disabled.
+    // Private browsing and full/disabled storage must never make the game unplayable.
+    return false;
+  }
+}
+
+export function loadPreferredConnectionMode(): PreferredConnectionMode {
+  try {
+    return window.localStorage.getItem(CONNECTION_MODE_STORAGE_KEY) === "offline"
+      ? "offline"
+      : "online";
+  } catch {
+    return "online";
+  }
+}
+
+export function savePreferredConnectionMode(mode: PreferredConnectionMode): void {
+  try {
+    window.localStorage.setItem(CONNECTION_MODE_STORAGE_KEY, mode);
+  } catch {
+    // The selected mode remains active for this page even if storage is disabled.
   }
 }
