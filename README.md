@@ -16,9 +16,11 @@ npm run build
 
 - déplacement tactile sur grille ;
 - ciblage et attaque automatique à portée ;
-- monstres passifs, défensifs et agressifs ;
+- monstres en patrouille, avec comportements passifs, défensifs et agressifs ;
 - progression générale et entraînement séparés ;
-- inventaire, équipement et statistiques compacts ;
+- inventaire et équipement autoritaires avec quatre slots et bonus de combat réels ;
+- mannequin, statistiques détaillées et retour de butin compacts sur mobile ;
+- rotation portrait/paysage sans étirement du canvas ;
 - présence multijoueur expérimentale par WebSocket Vercel avec repli local ;
 - paysage prioritaire, portrait utilisable.
 

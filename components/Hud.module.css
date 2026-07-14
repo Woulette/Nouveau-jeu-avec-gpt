@@ -18,7 +18,8 @@
 .powerBadge,
 .skillBar,
 .menuDock,
-.panel {
+.panel,
+.deathOverlay {
   pointer-events: auto;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
@@ -238,6 +239,84 @@
     inset 0 1px rgba(255, 255, 255, 0.05);
   transform: translateX(-50%);
   backdrop-filter: blur(9px);
+}
+
+.rewardFeed {
+  position: absolute;
+  bottom: calc(max(10px, env(safe-area-inset-bottom)) + 78px);
+  left: 50%;
+  display: grid;
+  width: min(310px, calc(100vw - 150px));
+  gap: 5px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.rewardCard {
+  display: grid;
+  min-height: 52px;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 9px 6px 6px;
+  border: 1px solid rgba(232, 199, 124, 0.48);
+  border-radius: 11px;
+  background:
+    linear-gradient(100deg, rgba(224, 183, 89, 0.12), transparent 62%),
+    rgba(8, 11, 15, 0.94);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.48), inset 0 1px rgba(255, 255, 255, 0.06);
+  animation: rewardEnter 220ms ease-out both;
+  backdrop-filter: blur(9px);
+}
+
+.rewardIcon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  color: #ead18c;
+  font-size: 20px;
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.38);
+}
+
+.rewardCopy {
+  display: grid;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.rewardCopy small {
+  color: #d0b269;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.rewardCopy strong {
+  overflow: hidden;
+  margin-top: 3px;
+  color: #fff5d7;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rewardQuantity {
+  color: #f0d891;
+  font-size: 12px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes rewardEnter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
 }
 
 .skillSlot {
@@ -520,7 +599,7 @@
 }
 
 .panelBody,
-.equipmentList,
+.equipmentPanelBody,
 .statsList {
   padding: 12px;
 }
@@ -723,8 +802,7 @@
   font-weight: 750;
 }
 
-.primaryAction,
-.ghostAction {
+.primaryAction {
   min-height: 42px;
   border-radius: 8px;
   font: inherit;
@@ -750,77 +828,397 @@
   cursor: default;
 }
 
-.equipmentList,
 .statsList {
   display: grid;
   gap: 8px;
 }
 
-.equipmentRow {
+.rankBonus {
   display: flex;
-  min-height: 61px;
+  min-height: 52px;
   align-items: center;
-  gap: 10px;
-  padding: 8px;
-  border: 1px solid rgba(224, 190, 117, 0.15);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.025);
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 11px;
+  border: 1px solid rgba(231, 195, 115, 0.28);
+  border-radius: 11px;
+  color: #d8c99f;
+  font-size: 9px;
+  background:
+    linear-gradient(105deg, rgba(218, 176, 81, 0.12), transparent 62%),
+    rgba(255, 255, 255, 0.025);
 }
 
-.equipmentIcon {
+.rankBonus span {
   display: grid;
-  flex: 0 0 43px;
-  width: 43px;
-  height: 43px;
-  place-items: center;
-  border: 1px solid rgba(225, 190, 112, 0.23);
-  border-radius: 8px;
-  color: #dfc57e;
-  font-size: 21px;
-  background: rgba(0, 0, 0, 0.26);
+  gap: 3px;
 }
 
-.equipmentCopy {
+.rankBonus small {
+  color: #b99c5c;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.rankBonus strong {
+  color: #f1d27e;
+  font-size: 19px;
+  font-variant-numeric: tabular-nums;
+}
+
+.equipmentPanelBody {
   display: grid;
-  min-width: 0;
-  line-height: 1.18;
+  gap: 13px;
 }
 
-.equipmentCopy strong {
+.equipmentStage {
+  position: relative;
+  height: 310px;
   overflow: hidden;
-  font-size: 11px;
+  border: 1px solid rgba(224, 190, 117, 0.19);
+  border-radius: 14px;
+  background:
+    radial-gradient(ellipse at 50% 52%, rgba(217, 175, 88, 0.11), transparent 31%),
+    radial-gradient(ellipse at 50% 112%, rgba(67, 103, 115, 0.2), transparent 45%),
+    linear-gradient(165deg, rgba(255, 255, 255, 0.035), transparent 52%),
+    rgba(2, 6, 10, 0.46);
+  box-shadow: inset 0 0 36px rgba(0, 0, 0, 0.38);
+}
+
+.equipmentStage::before {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  width: 126px;
+  height: 254px;
+  border: 1px solid rgba(224, 190, 117, 0.08);
+  border-radius: 50%;
+  content: "";
+  transform: translateX(-50%);
+  box-shadow: 0 0 42px rgba(208, 173, 90, 0.07);
+}
+
+.mannequin {
+  position: absolute;
+  top: 42px;
+  left: 50%;
+  z-index: 1;
+  width: 82px;
+  height: 235px;
+  transform: translateX(-50%);
+  filter: drop-shadow(0 10px 16px rgba(0, 0, 0, 0.55));
+}
+
+.mannequinHead,
+.mannequinBody,
+.mannequinArmLeft,
+.mannequinArmRight,
+.mannequinLegLeft,
+.mannequinLegRight,
+.mannequinAura {
+  position: absolute;
+  display: block;
+}
+
+.mannequinEquipped {
+  position: absolute;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  color: #f1d68c;
+  text-shadow: 0 2px 4px #000, 0 0 10px rgba(238, 202, 119, 0.35);
+}
+
+.mannequinEquipped_head {
+  top: -7px;
+  left: 23px;
+  width: 36px;
+  height: 28px;
+  font-size: 24px;
+}
+
+.mannequinEquipped_weapon {
+  top: 68px;
+  left: -13px;
+  width: 28px;
+  height: 66px;
+  font-size: 27px;
+  transform: rotate(-16deg);
+}
+
+.mannequinEquipped_armor {
+  top: 50px;
+  left: 23px;
+  width: 36px;
+  height: 56px;
+  font-size: 26px;
+  opacity: 0.86;
+}
+
+.mannequinEquipped_boots {
+  top: 202px;
+  left: 20px;
+  width: 42px;
+  height: 28px;
+  font-size: 24px;
+}
+
+.mannequinHead {
+  top: 0;
+  left: 27px;
+  width: 28px;
+  height: 33px;
+  border: 1px solid rgba(240, 210, 140, 0.45);
+  border-radius: 45% 45% 40% 40%;
+  background: linear-gradient(145deg, #776b53, #292b2a 72%);
+  box-shadow: inset 0 6px rgba(9, 12, 14, 0.54);
+}
+
+.mannequinBody {
+  top: 38px;
+  left: 18px;
+  width: 46px;
+  height: 92px;
+  border: 1px solid rgba(221, 190, 120, 0.35);
+  border-radius: 14px 14px 9px 9px;
+  background: linear-gradient(120deg, #394750, #171e23 68%);
+  clip-path: polygon(18% 0, 82% 0, 100% 88%, 76% 100%, 24% 100%, 0 88%);
+}
+
+.mannequinArmLeft,
+.mannequinArmRight {
+  top: 44px;
+  width: 15px;
+  height: 98px;
+  border-radius: 9px;
+  background: linear-gradient(#344149, #171d21);
+}
+
+.mannequinArmLeft {
+  left: 3px;
+  transform: rotate(7deg);
+}
+
+.mannequinArmRight {
+  right: 3px;
+  transform: rotate(-7deg);
+}
+
+.mannequinLegLeft,
+.mannequinLegRight {
+  top: 124px;
+  width: 20px;
+  height: 104px;
+  border-radius: 5px 5px 9px 9px;
+  background: linear-gradient(#202a30, #0f1519);
+}
+
+.mannequinLegLeft {
+  left: 19px;
+  transform: rotate(2deg);
+}
+
+.mannequinLegRight {
+  right: 19px;
+  transform: rotate(-2deg);
+}
+
+.mannequinAura {
+  inset: 10px -16px 0;
+  z-index: -1;
+  border-radius: 50%;
+  box-shadow: inset 0 0 38px rgba(92, 164, 191, 0.08), 0 0 22px rgba(210, 177, 96, 0.06);
+}
+
+.equipmentSlotCard {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  width: min(112px, 31%);
+  min-height: 75px;
+  padding: 6px 7px;
+  grid-template-columns: 35px minmax(0, 1fr);
+  grid-template-rows: auto auto auto;
+  align-items: center;
+  gap: 1px 6px;
+  border: 1px solid rgba(226, 190, 112, 0.28);
+  border-radius: 10px;
+  color: #ede5d1;
+  font: inherit;
+  text-align: left;
+  background: rgba(12, 17, 22, 0.9);
+  box-shadow: 0 8px 17px rgba(0, 0, 0, 0.32), inset 0 1px rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+}
+
+.equipmentSlotCard:disabled {
+  color: #908d85;
+  opacity: 1;
+  cursor: default;
+}
+
+.equipmentSlotCard:not(:disabled):active {
+  border-color: #edcb77;
+  transform: translateY(1px);
+}
+
+.equipmentSlotLabel {
+  grid-column: 1 / -1;
+  color: #d8bb70;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.equipmentSlotIcon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  grid-row: 2 / 4;
+  place-items: center;
+  border: 1px solid rgba(226, 190, 112, 0.2);
+  border-radius: 7px;
+  color: #e3ca86;
+  font-size: 17px;
+  background: rgba(0, 0, 0, 0.29);
+}
+
+.equipmentSlotCard strong,
+.equipmentSlotCard small {
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.equipmentCopy small,
-.equipmentLabel {
-  color: #aaa69c;
+.equipmentSlotCard strong {
+  font-size: 9px;
+}
+
+.equipmentSlotCard small {
+  color: #928f87;
+  font-size: 6px;
+  font-weight: 700;
+}
+
+.equipmentSlotHead {
+  top: 12px;
+  right: 9px;
+}
+
+.equipmentSlotWeapon {
+  top: 105px;
+  left: 9px;
+}
+
+.equipmentSlotArmor {
+  top: 105px;
+  right: 9px;
+}
+
+.equipmentSlotBoots {
+  right: 9px;
+  bottom: 10px;
+}
+
+.extraEquipmentSlots {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.extraEquipmentSlot,
+.equipmentInventoryItem {
+  display: flex;
+  min-width: 0;
+  min-height: 48px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid rgba(224, 190, 117, 0.18);
+  border-radius: 9px;
+  color: #ded8c9;
+  font: inherit;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.028);
+}
+
+.extraEquipmentSlot > span:first-child,
+.equipmentInventoryItem > span:first-child {
+  display: grid;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 7px;
+  font-size: 17px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.extraEquipmentSlot > span:nth-child(2),
+.extraEquipmentSlot strong {
+  overflow: hidden;
   font-size: 8px;
-  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.equipmentLabel {
-  color: #d5b868;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+.equipmentInventory {
+  padding-top: 1px;
 }
 
-.ghostAction {
-  flex: 0 0 auto;
-  min-height: 38px;
-  margin-left: auto;
-  padding: 0 10px;
-  border: 1px solid rgba(222, 192, 128, 0.22);
-  color: #d4d0c5;
-  background: rgba(255, 255, 255, 0.035);
+.equipmentInventoryGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.equipmentInventoryItem {
+  cursor: pointer;
+}
+
+.equipmentInventoryItem:disabled {
+  opacity: 0.53;
+  cursor: default;
+}
+
+.equipmentInventoryItem:not(:disabled):active {
+  transform: translateY(1px);
+  filter: brightness(1.16);
+}
+
+.equipmentInventoryCopy {
+  display: grid;
+  min-width: 0;
+}
+
+.equipmentInventoryCopy strong,
+.equipmentInventoryCopy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.equipmentInventoryCopy strong {
+  font-size: 9px;
+}
+
+.equipmentInventoryCopy small {
+  margin-top: 2px;
+  color: #a7a298;
+  font-size: 7px;
 }
 
 .statCard {
-  padding: 10px;
+  padding: 11px;
   border: 1px solid rgba(224, 190, 117, 0.15);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.025);
+  border-radius: 11px;
+  background:
+    linear-gradient(100deg, rgba(224, 190, 117, 0.045), transparent 57%),
+    rgba(255, 255, 255, 0.02);
 }
 
 .statTopline {
@@ -831,41 +1229,100 @@
 
 .statIcon {
   display: grid;
-  width: 26px;
-  height: 26px;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
   place-items: center;
-  border-radius: 7px;
+  border: 1px solid rgba(225, 190, 112, 0.2);
+  border-radius: 9px;
   color: #e5c97f;
-  font-size: 12px;
-  background: rgba(227, 190, 112, 0.09);
+  font-size: 18px;
+  background: rgba(227, 190, 112, 0.075);
+  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.26);
 }
 
-.statTopline strong {
+.statIdentity {
+  display: grid;
+  min-width: 0;
+}
+
+.statIdentity strong {
   font-size: 11px;
 }
 
+.statIdentity p {
+  margin: 3px 0 0;
+  color: #a9a59c;
+  font-size: 8px;
+  line-height: 1.28;
+}
+
 .statTotal {
+  display: grid;
   margin-left: auto;
   color: #f2d98f;
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 900;
   font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: right;
+}
+
+.statTotal small {
+  margin-bottom: 3px;
+  color: #918d84;
+  font-size: 6px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .statBreakdown {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 10px;
-  margin: 7px 0;
-  color: #aaa69d;
-  font-size: 8px;
-  font-weight: 700;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+  margin: 9px 0;
+}
+
+.statBreakdown span {
+  display: grid;
+  padding: 5px 6px;
+  border: 1px solid rgba(217, 186, 118, 0.1);
+  border-radius: 7px;
+  color: #e2d8bd;
+  font-size: 10px;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+  background: rgba(0, 0, 0, 0.17);
+}
+
+.statBreakdown small {
+  margin-bottom: 2px;
+  color: #8f8c84;
+  font-size: 6px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .trainingRow {
+  display: grid;
+  gap: 5px;
+}
+
+.trainingLabel {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
+  color: #a29e94;
+  font-size: 7px;
+  font-weight: 750;
+}
+
+.trainingLabel small {
+  font-size: 7px;
+  font-variant-numeric: tabular-nums;
 }
 
 .trainingTrack {
@@ -885,9 +1342,7 @@
   background: linear-gradient(90deg, #887035, #e1bd67);
 }
 
-.trainingRow small,
 .levelOnly {
-  flex: 0 0 auto;
   color: #9d998f;
   font-size: 8px;
   font-weight: 700;
@@ -897,6 +1352,66 @@
 .levelOnly {
   display: block;
   margin-top: 8px;
+}
+
+.deathOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  padding: max(18px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right))
+    max(18px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+  place-items: center;
+  background: radial-gradient(circle, rgba(43, 10, 14, 0.34), rgba(2, 4, 7, 0.78));
+  backdrop-filter: grayscale(0.72) blur(2px);
+}
+
+.deathCard {
+  display: grid;
+  width: min(360px, 88vw);
+  padding: 20px;
+  place-items: center;
+  border: 1px solid rgba(212, 157, 117, 0.36);
+  border-radius: 15px;
+  text-align: center;
+  background:
+    radial-gradient(circle at 50% 0, rgba(139, 49, 49, 0.15), transparent 48%),
+    rgba(8, 11, 15, 0.96);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.65), inset 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.deathRune {
+  color: #c86866;
+  font-size: 30px;
+  text-shadow: 0 0 20px rgba(218, 74, 74, 0.45);
+}
+
+.deathCard p {
+  margin: 5px 0 3px;
+  color: #bb9d91;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.deathCard h2 {
+  margin: 0 0 16px;
+  font-size: 18px;
+}
+
+.deathCard button {
+  min-width: 210px;
+  min-height: 45px;
+  padding: 8px 16px;
+  border: 1px solid rgba(238, 205, 129, 0.64);
+  border-radius: 9px;
+  color: #251c0d;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 900;
+  background: linear-gradient(#edcf83, #c89a42);
+  cursor: pointer;
 }
 
 @media (orientation: portrait) {
@@ -924,9 +1439,16 @@
   }
 
   .skillBar {
-    left: max(8px, env(safe-area-inset-left));
+    left: 50%;
     gap: 4px;
-    transform: none;
+    transform: translateX(-50%);
+  }
+
+  .rewardFeed {
+    bottom: calc(max(10px, env(safe-area-inset-bottom)) + 70px);
+    left: 50%;
+    width: min(280px, calc(100vw - 84px - env(safe-area-inset-left) - env(safe-area-inset-right)));
+    transform: translateX(-50%);
   }
 
   .skillSlot {
@@ -945,6 +1467,12 @@
 }
 
 @media (max-height: 470px) and (orientation: landscape) {
+  .hudPanelOpen .skillBar,
+  .hudPanelOpen .menuDock {
+    opacity: 0;
+    pointer-events: none;
+  }
+
   .playerCard {
     width: 264px;
     padding: 6px 8px 7px;
@@ -971,7 +1499,48 @@
   }
 
   .panel {
+    bottom: max(8px, env(safe-area-inset-bottom));
+  }
+
+  .rewardFeed {
     bottom: calc(max(8px, env(safe-area-inset-bottom)) + 62px);
+  }
+
+  .equipmentStage {
+    height: 214px;
+  }
+
+  .mannequin {
+    top: 25px;
+    transform: translateX(-50%) scale(0.72);
+    transform-origin: top center;
+  }
+
+  .equipmentSlotCard {
+    width: min(108px, 32%);
+    min-height: 58px;
+    padding: 4px 5px;
+    grid-template-columns: 29px minmax(0, 1fr);
+    gap: 1px 5px;
+  }
+
+  .equipmentSlotIcon {
+    width: 28px;
+    height: 28px;
+    font-size: 14px;
+  }
+
+  .equipmentSlotHead {
+    top: 7px;
+  }
+
+  .equipmentSlotWeapon,
+  .equipmentSlotArmor {
+    top: 76px;
+  }
+
+  .equipmentSlotBoots {
+    bottom: 7px;
   }
 }
 
@@ -1000,6 +1569,14 @@
   .inventoryGrid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
+
+  .equipmentInventoryGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .equipmentSlotCard {
+    width: 102px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1010,5 +1587,9 @@
   .meterFill,
   .menuButton > span {
     transition: none;
+  }
+
+  .rewardCard {
+    animation: none;
   }
 }

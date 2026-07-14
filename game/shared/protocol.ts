@@ -27,6 +27,16 @@ export const clientMessageSchema = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("respawn"), ...sequenced }),
   z.object({
+    type: z.literal("equip"),
+    itemId: z.string().min(1).max(80),
+    ...sequenced,
+  }),
+  z.object({
+    type: z.literal("unequip"),
+    slot: z.enum(["head", "weapon", "armor", "boots"]),
+    ...sequenced,
+  }),
+  z.object({
     type: z.literal("ping"),
     clientTime: z.number().finite(),
   }),

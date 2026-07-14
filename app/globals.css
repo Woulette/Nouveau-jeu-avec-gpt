@@ -48,12 +48,16 @@ button {
 .game-canvas {
   position: absolute;
   inset: 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  contain: strict;
 }
 
 .game-canvas canvas {
   display: block;
-  width: 100% !important;
-  height: 100% !important;
+  max-width: none;
+  max-height: none;
   image-rendering: pixelated;
   outline: none;
 }

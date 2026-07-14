@@ -53,7 +53,7 @@ Le personnage commence Aventurier niveau général 1 avec :
 - +1 en Défense de base ;
 - +1 en Énergie de base.
 
-L'Énergie, et donc la progression principale des PV et des PM, augmente uniquement grâce au niveau général. Elle ne possède pas d'expérience d'entraînement au combat dans le système actuel.
+L'Énergie de base, et donc la progression principale des PV et des PM, augmente uniquement grâce au niveau général. Elle ne possède pas d'expérience d'entraînement au combat dans le système actuel. Les équipements peuvent toutefois lui ajouter un bonus séparé tant qu'ils sont portés.
 
 ### Entraînement indépendant des statistiques
 
@@ -67,7 +67,7 @@ Corps-à-corps, Distance, Magie et Défense peuvent également progresser en ét
 
 Chaque statistique entraînable possède donc deux composantes distinctes :
 
-**Statistique totale = valeur obtenue par le niveau général + bonus obtenu par l'entraînement**
+**Statistique totale affichée = valeur obtenue par le niveau général + bonus obtenu par l'entraînement + bonus des équipements portés**
 
 Exemple :
 
@@ -86,6 +86,8 @@ La progression générale et l'entraînement ne doivent jamais modifier leurs co
 - cela ne donne pas d'XP générale et ne modifie pas le niveau général.
 
 Exemple : si le Corps-à-corps entraîné possède 70/100 XP et que le personnage gagne un niveau général, il reste exactement à 70/100 XP. Seule sa valeur de base reçoit +1.
+
+Équiper ou retirer un objet ne modifie jamais le niveau général, le niveau d'entraînement ni l'XP d'entraînement en cours. Le bonus d'objet constitue une troisième composante indépendante et réversible.
 
 Les courbes d'XP générale et de chaque entraînement seront calculées séparément.
 
@@ -179,6 +181,22 @@ Exemples :
 Un objet de haut rang obtenu en avance devient ainsi un objectif visible pour le joueur.
 
 Important : les bonus directs accordés par le rang ne doivent pas être inclus dans l'indice utilisé pour obtenir le rang suivant. Autrement, une promotion pourrait augmenter automatiquement l'indice et déclencher une chaîne de promotions sans nouvelle progression réelle. En revanche, les statistiques réellement gagnées ensuite et les nouveaux équipements équipés comptent normalement dans l'indice.
+
+### Équipement autoritaire de la première tranche
+
+Le personnage possède quatre emplacements réels : **Coiffe, Arme, Armure et Bottes**. Le panneau d'équipement montre le personnage au centre et place chaque emplacement à proximité de la partie du corps correspondante. L'objet porté apparaît également sur le mannequin sous forme d'icône afin que le changement soit immédiatement visible.
+
+La première tenue de test comprend une coiffe, une dague, une tunique et des bottes d'aventurier. Les monstres peuvent ensuite donner des objets plus puissants, par exemple la Coiffe du Sanglier ou la Lame-croc de faille.
+
+L'inventaire et l'équipement appartiennent au joueur autoritaire de la zone :
+
+- le serveur vérifie que l'objet est réellement possédé ;
+- il vérifie le type d'objet, le slot et le rang minimal ;
+- remplacer un objet conserve l'ancien dans l'inventaire ;
+- les bonus portés modifient réellement les dégâts, la Défense, l'Énergie, les PV, les PM et l'indice de puissance ;
+- les objets restent présents lors d'une reconnexion au même serveur de zone.
+
+Cette autorité est actuellement conservée en mémoire avec le personnage. La persistance durable entre redéploiements fera partie de l'étape consacrée aux comptes et à la base de données.
 
 ### Accès aux failles
 
@@ -280,6 +298,8 @@ Tous les monstres ne sont pas agressifs. Le comportement dépend de leur type :
 - défensif : riposte lorsqu'il est attaqué ;
 - agressif : détecte et poursuit le joueur dans une zone définie.
 
+Lorsqu'ils ne combattent pas, les monstres patrouillent périodiquement dans un petit rayon autour de leur point d'apparition. Une poursuite interrompue les fait revenir vers cette zone avant de reprendre leur patrouille.
+
 Les distances de détection, de poursuite, d'abandon et d'attaque devront être configurables par type de monstre.
 
 ### Compétences
@@ -299,6 +319,10 @@ Les distances de détection, de poursuite, d'abandon et d'attaque devront être 
 - Inventaire, équipement, statistiques et autres panneaux sont regroupés dans un menu compact.
 - Toucher le bouton du menu déroule les catégories disponibles ; le joueur choisit ensuite le panneau à ouvrir.
 - Les panneaux secondaires doivent pouvoir se refermer rapidement et ne pas masquer inutilement le combat.
+- Le panneau d'équipement utilise un mannequin central et quatre slots spatiaux clairement identifiés.
+- Les statistiques montrent pour chaque valeur le détail Base, Combat, Équipement et la progression d'entraînement.
+- Un butin ramassé automatiquement affiche pendant quelques secondes son icône, son nom et sa quantité juste au-dessus de la barre de compétences.
+- Une rotation portrait-paysage doit redimensionner le canvas à la taille exacte de l'écran sans étirer l'image ni conserver l'ancienne orientation.
 
 ### Monde et contenu initial
 
@@ -312,7 +336,7 @@ Le multijoueur fait partie de la fondation du projet et non d'une conversion pr�
 
 - les joueurs connectés à la même zone partagent un même état de monde et peuvent se voir se déplacer ;
 - le client envoie des intentions de déplacement, de ciblage et d'utilisation de compétence ;
-- le serveur de zone valide les positions, les combats, les dégâts, les monstres, l'XP et le butin, puis diffuse des instantanés du monde ;
+- le serveur de zone valide les positions, les combats, les dégâts, les monstres, l'XP, le butin, l'inventaire et l'équipement, puis diffuse des instantanés du monde ;
 - les monstres appartiennent au monde partagé : leur position, leur comportement et leurs PV doivent être cohérents entre les joueurs ;
 - la première tranche peut utiliser un serveur de zone en mémoire pour valider rapidement les sensations de jeu ;
 - si la connexion au monde partagé échoue, une simulation locale permet tout de même de tester le déplacement, le ciblage, le combat et l'interface depuis Vercel.
@@ -402,6 +426,7 @@ Les fondations sont suffisamment définies pour construire et tester. Les sujets
 ## 11. État du projet
 
 - Phase actuelle : première tranche jouable en cours d'implémentation.
+- État du 14 juillet 2026 : interface équipement/statistiques refondue, butin lisible, mort et réapparition jouables, monstres en patrouille, équipement autoritaire actif et rotation mobile corrigée.
 - Les fondations validées sont le déplacement tactile sur cases, le combat automatique à portée, les cinq statistiques, les rangs liés à la puissance et au niveau minimum, les trois voies permanentes, l'interface mobile compacte et l'intégration MMO progressive.
 - Les valeurs d'équilibrage provisoires peuvent être modifiées après les essais sans changer ces fondations.
 - Chaque version stable doit être enregistrée sur GitHub et rendue testable sur Vercel afin que le projet reste accessible depuis mobile.

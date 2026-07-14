@@ -18,12 +18,21 @@ import {
   manhattanDistance,
   positionKey,
 } from "../shared/grid";
+import {
+  ITEM_CATALOG,
+  STARTER_INVENTORY,
+  isKnownItem,
+  meetsItemRank,
+  type ItemBonuses,
+  type ItemDefinition,
+} from "../shared/items";
 import { findPath, findPathToAttackRange } from "../shared/pathfinding";
 import type { ClientMessage, JoinMessage } from "../shared/protocol";
 import type {
   CombatPath,
   Direction,
   EntityId,
+  EquipmentSlot,
   GameEvent,
   GridPosition,
   MonsterSnapshot,
@@ -43,10 +52,13 @@ export const REALM_TICK_RATE = 10;
 export const REALM_SNAPSHOT_RATE = 5;
 const TICK_INTERVAL_MS = 1_000 / REALM_TICK_RATE;
 const SNAPSHOT_EVERY_TICKS = REALM_TICK_RATE / REALM_SNAPSHOT_RATE;
-const PLAYER_MOVE_INTERVAL_MS = 210;
+const PLAYER_MOVE_INTERVAL_MS = 200;
 const PLAYER_ATTACK_INTERVAL_MS = 900;
 const REPATH_INTERVAL_MS = 250;
 const DISCONNECTED_PLAYER_TTL_MS = 30_000;
+const MONSTER_WANDER_RADIUS = 3;
+const MONSTER_WANDER_MIN_DELAY_MS = 1_600;
+const MONSTER_WANDER_MAX_DELAY_MS = 3_600;
 
 type MasteryKey = "melee" | "ranged" | "magic" | "defense";
 
@@ -78,6 +90,8 @@ interface RuntimePlayer {
   combatPath: CombatPath;
   className: string;
   masteries: Record<MasteryKey, RuntimeMastery>;
+  inventory: Record<string, number>;
+  equipment: Record<EquipmentSlot, string | null>;
   lastSequence: number;
 }
 
@@ -92,6 +106,7 @@ interface RuntimeMonster {
   nextMoveAt: number;
   nextAttackAt: number;
   nextRepathAt: number;
+  nextWanderAt: number;
   alive: boolean;
   hp: number;
   respawnAt: number;
@@ -133,6 +148,7 @@ export class InMemoryRealm {
         nextMoveAt: 0,
         nextAttackAt: 0,
         nextRepathAt: 0,
+        nextWanderAt: 0,
         alive: true,
         hp: definition.maxHp,
         respawnAt: 0,
@@ -240,6 +256,8 @@ export class InMemoryRealm {
       );
     }
     if (message.type === "respawn") this.respawnPlayer(player, message.sequence);
+    if (message.type === "equip") this.requestEquip(player, message.itemId, message.sequence);
+    if (message.type === "unequip") this.requestUnequip(player, message.slot, message.sequence);
   }
 
   /** Public for deterministic tests; production uses the internal interval. */
@@ -297,6 +315,10 @@ export class InMemoryRealm {
         magic: { level: 0, xp: 0 },
         defense: { level: 0, xp: 0 },
       },
+      inventory: Object.fromEntries(
+        Object.entries(STARTER_INVENTORY).filter(([, quantity]) => quantity > 0),
+      ),
+      equipment: { head: null, weapon: null, armor: null, boots: null },
       lastSequence: -1,
     };
     return player;
@@ -343,6 +365,57 @@ export class InMemoryRealm {
     player.lastTargetPosition = null;
     player.nextRepathAt = 0;
     this.planPlayerAttackPath(player, target, this.now());
+  }
+
+  private requestEquip(player: RuntimePlayer, itemId: string, sequence: number): void {
+    if (!isKnownItem(itemId)) {
+      this.sendPlayerError(player, "UNKNOWN_ITEM", "Cet objet est inconnu.", sequence);
+      return;
+    }
+
+    const definition = ITEM_CATALOG[itemId];
+    const equipmentSlot = definition.equipmentSlot;
+    if (definition.kind !== "equipment" || !equipmentSlot) {
+      this.sendPlayerError(player, "ITEM_NOT_EQUIPPABLE", "Cet objet ne peut pas être équipé.", sequence);
+      return;
+    }
+    if (!meetsItemRank(player.rank, definition.requiredRank)) {
+      this.sendPlayerError(
+        player,
+        "RANK_REQUIRED",
+        `Le rang ${definition.requiredRank} est requis pour équiper cet objet.`,
+        sequence,
+      );
+      return;
+    }
+    if ((player.inventory[itemId] ?? 0) < 1) {
+      this.sendPlayerError(
+        player,
+        "ITEM_NOT_OWNED",
+        "Cet objet n’est pas dans votre inventaire.",
+        sequence,
+      );
+      return;
+    }
+
+    const oldMaxHp = this.playerMaxHp(player);
+    const oldMaxMp = this.playerMaxMp(player);
+    player.equipment[equipmentSlot] = itemId;
+    this.adjustVitalsAfterEquipmentChange(player, oldMaxHp, oldMaxMp);
+    this.broadcastSnapshot();
+  }
+
+  private requestUnequip(player: RuntimePlayer, slot: EquipmentSlot, sequence: number): void {
+    if (player.equipment[slot] === null) {
+      this.sendPlayerError(player, "SLOT_EMPTY", "Cet emplacement est déjà vide.", sequence);
+      return;
+    }
+
+    const oldMaxHp = this.playerMaxHp(player);
+    const oldMaxMp = this.playerMaxMp(player);
+    player.equipment[slot] = null;
+    this.adjustVitalsAfterEquipmentChange(player, oldMaxHp, oldMaxMp);
+    this.broadcastSnapshot();
   }
 
   private updatePlayers(now: number): void {
@@ -466,15 +539,7 @@ export class InMemoryRealm {
       } else {
         monster.targetId = null;
         monster.lastTargetPosition = null;
-        if (positionKey(monster.position) !== positionKey(monster.definition.spawn)) {
-          if (monster.path.length === 0 || now >= monster.nextRepathAt) {
-            monster.path =
-              findPath(STARTER_MAP, monster.position, monster.definition.spawn, {
-                occupied: this.occupiedPositions(new Set([monster.definition.id])),
-              }) ?? [];
-            monster.nextRepathAt = now + REPATH_INTERVAL_MS;
-          }
-        }
+        this.planIdleMonsterMovement(monster, now);
       }
 
       this.advanceMonster(monster, now);
@@ -493,6 +558,8 @@ export class InMemoryRealm {
         monster.targetId = null;
         monster.provokedById = null;
         monster.path = [];
+        monster.lastTargetPosition = null;
+        monster.nextRepathAt = 0;
       }
     }
 
@@ -523,6 +590,81 @@ export class InMemoryRealm {
     monster.targetId = closest?.id ?? null;
   }
 
+  private planIdleMonsterMovement(monster: RuntimeMonster, now: number): void {
+    const distanceFromSpawn = manhattanDistance(monster.position, monster.definition.spawn);
+    const wanderRadius = Math.max(
+      1,
+      Math.min(MONSTER_WANDER_RADIUS, monster.definition.leashRange),
+    );
+
+    // A chase can end outside the small idle area. Returning home always takes
+    // priority over selecting another patrol destination.
+    if (distanceFromSpawn > wanderRadius) {
+      if (monster.path.length === 0 || now >= monster.nextRepathAt) {
+        monster.path =
+          findPath(STARTER_MAP, monster.position, monster.definition.spawn, {
+            occupied: this.occupiedPositions(new Set([monster.definition.id])),
+          }) ?? [];
+        monster.nextRepathAt = now + REPATH_INTERVAL_MS;
+      }
+      return;
+    }
+
+    if (monster.path.length > 0 || now < monster.nextWanderAt) return;
+
+    const occupied = this.occupiedPositions(new Set([monster.definition.id]));
+    const candidates: GridPosition[] = [];
+    for (
+      let y = monster.definition.spawn.y - wanderRadius;
+      y <= monster.definition.spawn.y + wanderRadius;
+      y += 1
+    ) {
+      for (
+        let x = monster.definition.spawn.x - wanderRadius;
+        x <= monster.definition.spawn.x + wanderRadius;
+        x += 1
+      ) {
+        const candidate = { x, y };
+        if (
+          positionKey(candidate) !== positionKey(monster.position) &&
+          manhattanDistance(candidate, monster.definition.spawn) <= wanderRadius &&
+          isWalkable(STARTER_MAP, candidate, occupied)
+        ) {
+          candidates.push(candidate);
+        }
+      }
+    }
+
+    const roll = this.randomUnit();
+    monster.nextWanderAt =
+      now +
+      MONSTER_WANDER_MIN_DELAY_MS +
+      Math.floor(roll * (MONSTER_WANDER_MAX_DELAY_MS - MONSTER_WANDER_MIN_DELAY_MS));
+    if (candidates.length === 0) return;
+
+    const startIndex = Math.floor(roll * candidates.length);
+    for (let offset = 0; offset < candidates.length; offset += 1) {
+      const destination = candidates[(startIndex + offset) % candidates.length];
+      const path = findPath(STARTER_MAP, monster.position, destination, { occupied });
+      if (
+        path &&
+        path.length > 0 &&
+        path.every(
+          (position) =>
+            manhattanDistance(position, monster.definition.spawn) <= wanderRadius,
+        )
+      ) {
+        monster.path = path;
+        monster.nextRepathAt = now + REPATH_INTERVAL_MS;
+        return;
+      }
+    }
+  }
+
+  private randomUnit(): number {
+    return Math.min(1 - Number.EPSILON, Math.max(0, this.random()));
+  }
+
   private advanceMonster(monster: RuntimeMonster, now: number): void {
     if (monster.path.length === 0 || now < monster.nextMoveAt) return;
     const next = monster.path[0];
@@ -541,8 +683,7 @@ export class InMemoryRealm {
 
   private monsterAttack(monster: RuntimeMonster, player: RuntimePlayer, now: number): void {
     monster.nextAttackAt = now + monster.definition.attackIntervalMs;
-    const effectiveDefense =
-      (player.level + player.masteries.defense.level) * (1 + RANK_BONUS[player.rank]);
+    const effectiveDefense = this.playerDefenseStat(player) * (1 + RANK_BONUS[player.rank]);
     const damage = damageAfterDefense(monster.definition.attackDamage, effectiveDefense);
     player.hp = Math.max(0, player.hp - damage);
     this.broadcastEvent({
@@ -580,6 +721,7 @@ export class InMemoryRealm {
     monster.path = [];
     monster.targetId = null;
     monster.provokedById = null;
+    monster.lastTargetPosition = null;
     monster.respawnAt = now + monster.definition.respawnMs;
     killer.targetId = null;
     killer.path = [];
@@ -598,10 +740,12 @@ export class InMemoryRealm {
       masteryXp: 0,
     });
     if (this.random() <= monster.definition.lootChance) {
+      const itemId = monster.definition.lootItemId;
+      killer.inventory[itemId] = (killer.inventory[itemId] ?? 0) + 1;
       this.sendEventToPlayer(killer, {
         type: "loot",
         playerId: killer.id,
-        itemId: monster.definition.lootItemId,
+        itemId,
         quantity: 1,
       });
     }
@@ -612,9 +756,15 @@ export class InMemoryRealm {
     monster.hp = monster.definition.maxHp;
     monster.position = clonePosition(monster.definition.spawn);
     monster.direction = "south";
+    monster.path = [];
+    monster.targetId = null;
+    monster.provokedById = null;
+    monster.lastTargetPosition = null;
     monster.respawnAt = 0;
     monster.nextAttackAt = 0;
     monster.nextMoveAt = 0;
+    monster.nextRepathAt = 0;
+    monster.nextWanderAt = 0;
     this.broadcastEvent({
       type: "respawn",
       entityId: monster.definition.id,
@@ -630,7 +780,7 @@ export class InMemoryRealm {
     player.alive = true;
     player.position = this.nearestOpenPosition(STARTER_MAP.playerSpawn);
     player.hp = this.playerMaxHp(player);
-    player.mp = playerMaxMp(player.level);
+    player.mp = this.playerMaxMp(player);
     player.direction = "south";
     player.path = [];
     this.broadcastEvent({ type: "respawn", entityId: player.id, position: player.position });
@@ -642,7 +792,7 @@ export class InMemoryRealm {
       player.xp -= generalXpToNext(player.level);
       player.level += 1;
       player.hp = this.playerMaxHp(player);
-      player.mp = playerMaxMp(player.level);
+      player.mp = this.playerMaxMp(player);
       this.broadcastEvent({ type: "level-up", playerId: player.id, level: player.level });
     }
   }
@@ -711,7 +861,12 @@ export class InMemoryRealm {
       ) {
         this.players.delete(player.id);
         for (const monster of this.monsters.values()) {
-          if (monster.targetId === player.id) monster.targetId = null;
+          if (monster.targetId === player.id) {
+            monster.targetId = null;
+            monster.path = [];
+            monster.lastTargetPosition = null;
+            monster.nextRepathAt = 0;
+          }
           if (monster.provokedById === player.id) monster.provokedById = null;
         }
       }
@@ -720,19 +875,57 @@ export class InMemoryRealm {
 
   private playerCombatStat(player: RuntimePlayer): number {
     return combatStatForPath(player.combatPath, player.level, {
-      melee: player.masteries.melee.level,
-      ranged: player.masteries.ranged.level,
-      magic: player.masteries.magic.level,
+      melee: player.masteries.melee.level + this.equipmentBonus(player, "melee"),
+      ranged: player.masteries.ranged.level + this.equipmentBonus(player, "ranged"),
+      magic: player.masteries.magic.level + this.equipmentBonus(player, "magic"),
     });
   }
 
+  private playerDefenseStat(player: RuntimePlayer): number {
+    return player.level + player.masteries.defense.level + this.equipmentBonus(player, "defense");
+  }
+
+  private playerEnergyStat(player: RuntimePlayer): number {
+    return player.level + this.equipmentBonus(player, "energy");
+  }
+
   private playerMaxHp(player: RuntimePlayer): number {
-    return playerMaxHp(player.level, player.rank);
+    return playerMaxHp(this.playerEnergyStat(player), player.rank);
+  }
+
+  private playerMaxMp(player: RuntimePlayer): number {
+    return playerMaxMp(this.playerEnergyStat(player));
+  }
+
+  private equipmentBonus(player: RuntimePlayer, bonus: keyof ItemBonuses): number {
+    let total = 0;
+    for (const itemId of Object.values(player.equipment)) {
+      if (!itemId || !isKnownItem(itemId)) continue;
+      const definition: ItemDefinition = ITEM_CATALOG[itemId];
+      total += definition.bonuses?.[bonus] ?? 0;
+    }
+    return total;
+  }
+
+  private adjustVitalsAfterEquipmentChange(
+    player: RuntimePlayer,
+    oldMaxHp: number,
+    oldMaxMp: number,
+  ): void {
+    const newMaxHp = this.playerMaxHp(player);
+    const newMaxMp = this.playerMaxMp(player);
+    const hpRatio = oldMaxHp > 0 ? player.hp / oldMaxHp : 1;
+    const mpRatio = oldMaxMp > 0 ? player.mp / oldMaxMp : 1;
+    player.hp = player.alive
+      ? Math.min(newMaxHp, Math.max(0, Math.round(newMaxHp * hpRatio)))
+      : 0;
+    player.mp = Math.min(newMaxMp, Math.max(0, Math.round(newMaxMp * mpRatio)));
   }
 
   private playerSnapshot(player: RuntimePlayer): PlayerSnapshot {
     const combatStat = this.playerCombatStat(player);
-    const defense = player.level + player.masteries.defense.level;
+    const defense = this.playerDefenseStat(player);
+    const energy = this.playerEnergyStat(player);
     return {
       id: player.id,
       name: player.name,
@@ -744,7 +937,7 @@ export class InMemoryRealm {
       hp: player.hp,
       maxHp: this.playerMaxHp(player),
       mp: player.mp,
-      maxMp: playerMaxMp(player.level),
+      maxMp: this.playerMaxMp(player),
       level: player.level,
       xp: player.xp,
       xpToNext: generalXpToNext(player.level),
@@ -755,7 +948,7 @@ export class InMemoryRealm {
         level: player.level,
         combatStat,
         defense,
-        energy: player.level,
+        energy,
       }),
       masteries: {
         melee: {
@@ -779,6 +972,11 @@ export class InMemoryRealm {
           xpToNext: masteryXpToNext(player.masteries.defense.level),
         },
       },
+      inventory: Object.entries(player.inventory)
+        .filter(([, quantity]) => quantity > 0)
+        .map(([itemId, quantity]) => ({ itemId, quantity }))
+        .sort((a, b) => a.itemId.localeCompare(b.itemId)),
+      equipment: { ...player.equipment },
     };
   }
 
@@ -797,6 +995,7 @@ export class InMemoryRealm {
       maxHp: monster.definition.maxHp,
       level: monster.definition.level,
       isBoss: monster.definition.isBoss ?? false,
+      moveIntervalMs: monster.definition.moveIntervalMs,
     };
   }
 

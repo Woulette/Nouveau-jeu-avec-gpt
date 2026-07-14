@@ -1,5 +1,11 @@
 import type { ClientMessage } from "@/game/shared/protocol";
-import type { GameEvent, PublicMapDefinition, RealmSnapshot, ServerMessage } from "@/game/shared/types";
+import type {
+  EquipmentSlot,
+  GameEvent,
+  PublicMapDefinition,
+  RealmSnapshot,
+  ServerMessage,
+} from "@/game/shared/types";
 import type { InMemoryRealm } from "@/game/server/realm";
 
 type ConnectionStatus = "connecting" | "online" | "reconnecting" | "local";
@@ -71,6 +77,14 @@ export class WorldSocket {
 
   respawn() {
     this.send({ type: "respawn", sequence: this.nextSequence() });
+  }
+
+  equip(itemId: string) {
+    this.send({ type: "equip", itemId, sequence: this.nextSequence() });
+  }
+
+  unequip(slot: EquipmentSlot) {
+    this.send({ type: "unequip", slot, sequence: this.nextSequence() });
   }
 
   private nextSequence() {

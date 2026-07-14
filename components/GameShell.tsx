@@ -6,6 +6,7 @@ import Hud, {
   type HudConnectionStatus,
   type HudEquipmentSlot,
   type HudInventoryItem,
+  type HudReward,
   type HudStatBreakdown,
 } from "./Hud";
 
@@ -24,6 +25,8 @@ export interface GameHudUpdate {
   inventory?: HudInventoryItem[];
   equipment?: HudEquipmentSlot[];
   stats?: HudStatBreakdown[];
+  rewards?: HudReward[];
+  alive?: boolean;
 }
 
 const initialInventory: HudInventoryItem[] = [
@@ -36,20 +39,69 @@ const initialInventory: HudInventoryItem[] = [
     description: "Une préparation simple qui restaure quelques points de vie.",
     equippable: false,
   },
+  {
+    id: "coiffe-aventurier",
+    name: "Coiffe d’aventurier",
+    icon: "♕",
+    quantity: 1,
+    rarity: "common",
+    description: "Une coiffe légère remise aux nouveaux aventuriers du Val d’Aube.",
+    requiredRank: "E",
+    equippable: true,
+    canEquip: true,
+    stats: [{ label: "Défense", value: "+1" }],
+  },
+  {
+    id: "dague-emoussee",
+    name: "Dague émoussée",
+    icon: "†",
+    quantity: 1,
+    rarity: "common",
+    description: "Une arme modeste, mais suffisante pour les premières chasses.",
+    requiredRank: "E",
+    equippable: true,
+    canEquip: true,
+    stats: [{ label: "Corps-à-corps", value: "+1" }],
+  },
+  {
+    id: "tunique-aventurier",
+    name: "Tunique d’aventurier",
+    icon: "♜",
+    quantity: 1,
+    rarity: "common",
+    description: "Une tunique renforcée distribuée aux nouveaux aventuriers.",
+    requiredRank: "E",
+    equippable: true,
+    canEquip: true,
+    stats: [{ label: "Défense", value: "+1" }],
+  },
+  {
+    id: "bottes-aventurier",
+    name: "Bottes d’aventurier",
+    icon: "⌁",
+    quantity: 1,
+    rarity: "common",
+    description: "Des bottes souples qui facilitent les longues expéditions.",
+    requiredRank: "E",
+    equippable: true,
+    canEquip: true,
+    stats: [{ label: "Énergie", value: "+1" }],
+  },
 ];
 
 const initialEquipment: HudEquipmentSlot[] = [
+  { id: "head", label: "Coiffe", icon: "♕", item: null },
   { id: "weapon", label: "Arme", icon: "†", item: null },
   { id: "armor", label: "Armure", icon: "♜", item: null },
   { id: "boots", label: "Bottes", icon: "⌁", item: null },
 ];
 
 const initialStats: HudStatBreakdown[] = [
-  { id: "melee", label: "Corps-à-corps", icon: "†", base: 1, training: 0, equipment: 0, total: 1, xp: 0, xpToNext: 50 },
-  { id: "ranged", label: "Distance", icon: "➶", base: 1, training: 0, equipment: 0, total: 1, xp: 0, xpToNext: 50 },
-  { id: "magic", label: "Magie", icon: "✦", base: 1, training: 0, equipment: 0, total: 1, xp: 0, xpToNext: 50 },
-  { id: "defense", label: "Défense", icon: "♜", base: 1, training: 0, equipment: 0, total: 1, xp: 0, xpToNext: 50 },
-  { id: "energy", label: "Énergie", icon: "◆", base: 1, training: 0, equipment: 0, total: 1 },
+  { id: "melee", label: "Corps-à-corps", icon: "⚔", description: "Augmente les dégâts des attaques au corps à corps.", base: 1, training: 0, equipment: 0, total: 1, xp: 0, xpToNext: 50 },
+  { id: "ranged", label: "Distance", icon: "➶", description: "Augmente les dégâts des attaques à distance.", base: 1, training: 0, equipment: 0, total: 1, xp: 0, xpToNext: 50 },
+  { id: "magic", label: "Magie", icon: "✦", description: "Augmente la puissance des sorts magiques.", base: 1, training: 0, equipment: 0, total: 1, xp: 0, xpToNext: 50 },
+  { id: "defense", label: "Défense", icon: "🛡", description: "Réduit les dégâts reçus au combat.", base: 1, training: 0, equipment: 0, total: 1, xp: 0, xpToNext: 50 },
+  { id: "energy", label: "Énergie", icon: "⚡", description: "Renforce les réserves de vie et de mana.", base: 1, training: 0, equipment: 0, total: 1 },
 ];
 
 export default function GameShell() {
@@ -70,6 +122,8 @@ export default function GameShell() {
     inventory: initialInventory,
     equipment: initialEquipment,
     stats: initialStats,
+    rewards: [] as HudReward[],
+    alive: true,
   });
 
   useEffect(() => {
@@ -117,6 +171,7 @@ export default function GameShell() {
         onEquip={(itemId) => dispatchToGame("ui:equip", { itemId })}
         onUnequip={(slotId) => dispatchToGame("ui:unequip", { slotId })}
         onSkillActivate={(skillId) => dispatchToGame("ui:skill", { skillId })}
+        onRespawn={() => dispatchToGame("ui:respawn", {})}
       />
 
       <div

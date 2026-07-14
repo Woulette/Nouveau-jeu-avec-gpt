@@ -9,6 +9,14 @@ export type Direction = "north" | "south" | "east" | "west";
 export type PlayerRank = "E" | "D" | "C" | "B" | "A" | "S" | "SS" | "SSS" | "OMEGA";
 export type CombatPath = "adventurer" | "melee" | "ranged" | "magic";
 export type MonsterBehaviour = "passive" | "defensive" | "aggressive";
+export type EquipmentSlot = "head" | "weapon" | "armor" | "boots";
+
+export interface InventoryEntrySnapshot {
+  itemId: string;
+  quantity: number;
+}
+
+export type EquipmentSnapshot = Record<EquipmentSlot, string | null>;
 
 export interface CollisionGrid {
   width: number;
@@ -56,6 +64,8 @@ export interface PlayerSnapshot {
   className: string;
   power: number;
   masteries: PlayerMasteries;
+  inventory: InventoryEntrySnapshot[];
+  equipment: EquipmentSnapshot;
 }
 
 export interface MonsterSnapshot {
@@ -72,6 +82,7 @@ export interface MonsterSnapshot {
   maxHp: number;
   level: number;
   isBoss: boolean;
+  moveIntervalMs: number;
 }
 
 export interface RealmSnapshot {

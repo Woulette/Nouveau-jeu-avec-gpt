@@ -10,11 +10,22 @@ export interface CreateMmoGameOptions {
 }
 
 export function createMmoGame(container: HTMLDivElement, options: CreateMmoGameOptions) {
+  const containerSize = () => {
+    const bounds = container.getBoundingClientRect();
+    const fallbackWidth = window.innerWidth || 320;
+    const fallbackHeight = window.innerHeight || 320;
+    return {
+      width: Math.max(1, Math.round(bounds.width || fallbackWidth)),
+      height: Math.max(1, Math.round(bounds.height || fallbackHeight)),
+    };
+  };
+  const initialSize = containerSize();
+
   const game = new Phaser.Game({
     type: Phaser.AUTO,
     parent: container,
-    width: Math.max(320, container.clientWidth || window.innerWidth),
-    height: Math.max(320, container.clientHeight || window.innerHeight),
+    width: initialSize.width,
+    height: initialSize.height,
     backgroundColor: "#10151b",
     pixelArt: true,
     antialias: false,
@@ -30,8 +41,8 @@ export function createMmoGame(container: HTMLDivElement, options: CreateMmoGameO
       mode: Phaser.Scale.RESIZE,
       autoCenter: Phaser.Scale.CENTER_BOTH,
       parent: container,
-      width: "100%",
-      height: "100%",
+      width: initialSize.width,
+      height: initialSize.height,
     },
     input: {
       activePointers: 2,
@@ -40,5 +51,38 @@ export function createMmoGame(container: HTMLDivElement, options: CreateMmoGameO
     scene: [new WorldScene(options)],
   });
 
-  return () => game.destroy(true);
+  let resizeFrame = 0;
+  const resizeTimers: number[] = [];
+  const resizeGame = () => {
+    window.cancelAnimationFrame(resizeFrame);
+    resizeFrame = window.requestAnimationFrame(() => {
+      if (!game.isBooted) return;
+      const nextSize = containerSize();
+      if (
+        game.scale.gameSize.width !== nextSize.width ||
+        game.scale.gameSize.height !== nextSize.height
+      ) {
+        game.scale.resize(nextSize.width, nextSize.height);
+      }
+    });
+  };
+  const settleOrientation = () => {
+    resizeGame();
+    resizeTimers.push(window.setTimeout(resizeGame, 90));
+    resizeTimers.push(window.setTimeout(resizeGame, 280));
+  };
+
+  const resizeObserver = new ResizeObserver(resizeGame);
+  resizeObserver.observe(container);
+  window.addEventListener("orientationchange", settleOrientation);
+  window.visualViewport?.addEventListener("resize", resizeGame);
+
+  return () => {
+    resizeObserver.disconnect();
+    window.cancelAnimationFrame(resizeFrame);
+    for (const timer of resizeTimers) window.clearTimeout(timer);
+    window.removeEventListener("orientationchange", settleOrientation);
+    window.visualViewport?.removeEventListener("resize", resizeGame);
+    game.destroy(true);
+  };
 }

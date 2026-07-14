@@ -4,14 +4,25 @@ import type { GameHudUpdate } from "@/components/GameShell";
 import type {
   HudEquipmentSlot,
   HudInventoryItem,
-  HudItemRarity,
+  HudReward,
   HudStatBreakdown,
 } from "@/components/Hud";
 import { positionKey } from "@/game/shared/grid";
+import {
+  EQUIPMENT_SLOTS,
+  ITEM_CATALOG,
+  isKnownItem,
+  meetsItemRank,
+  type ItemBonuses,
+  type ItemDefinition,
+} from "@/game/shared/items";
 import type {
   Direction,
+  EquipmentSlot,
+  EquipmentSnapshot,
   GameEvent,
   GridPosition,
+  MonsterBehaviour,
   MonsterSnapshot,
   PlayerSnapshot,
   PublicMapDefinition,
@@ -31,8 +42,6 @@ import {
   type CreatureKind,
 } from "./visualTypes";
 
-const INVENTORY_KEY = "nouveau-mmo-inventory-v1";
-const EQUIPMENT_KEY = "nouveau-mmo-equipment-v1";
 const PLAYER_NAME_KEY = "nouveau-mmo-player-name-v1";
 const TILE = STARTER_MAP.tileSize;
 
@@ -53,80 +62,26 @@ interface EntityView {
   healthY: number;
 }
 
-interface StoredEquipment {
-  weapon?: HudInventoryItem;
-  armor?: HudInventoryItem;
-  boots?: HudInventoryItem;
-}
-
-const EQUIPMENT_LABELS: Readonly<Record<keyof StoredEquipment, string>> = {
+const EQUIPMENT_LABELS: Readonly<Record<EquipmentSlot, string>> = {
+  head: "Coiffe",
   weapon: "Arme",
   armor: "Armure",
   boots: "Bottes",
 };
 
-const EQUIPMENT_ICONS: Readonly<Record<keyof StoredEquipment, string>> = {
+const EQUIPMENT_ICONS: Readonly<Record<EquipmentSlot, string>> = {
+  head: "♕",
   weapon: "†",
   armor: "♜",
   boots: "⌁",
 };
 
-const ITEM_SLOTS: Readonly<Record<string, keyof StoredEquipment>> = {
-  "croc-de-faille": "weapon",
-  "defense-de-sanglier": "armor",
-  "fragment-de-faille": "weapon",
-};
-
-const ITEM_DEFINITIONS: Readonly<
-  Record<
-    string,
-    Omit<HudInventoryItem, "quantity" | "equipped"> & { rarity: HudItemRarity }
-  >
-> = {
-  "gelee-claire": {
-    id: "gelee-claire",
-    name: "Gelée claire",
-    icon: "◉",
-    rarity: "common",
-    description: "Un composant visqueux récolté dans les prés.",
-    equippable: false,
-  },
-  "defense-de-sanglier": {
-    id: "defense-de-sanglier",
-    name: "Cuirasse moussue",
-    icon: "♜",
-    rarity: "uncommon",
-    description: "Une protection rustique façonnée avec les défenses d’un sanglier.",
-    requiredRank: "E",
-    equippable: true,
-    canEquip: true,
-    stats: [{ label: "Défense", value: "+3" }],
-  },
-  "croc-de-faille": {
-    id: "croc-de-faille",
-    name: "Lame-croc de faille",
-    icon: "†",
-    rarity: "rare",
-    description: "Une lame courte traversée par une lueur violette.",
-    requiredRank: "E",
-    equippable: true,
-    canEquip: true,
-    stats: [{ label: "Corps-à-corps", value: "+4" }],
-  },
-  "fragment-de-faille": {
-    id: "fragment-de-faille",
-    name: "Éclat du Gardien",
-    icon: "◆",
-    rarity: "epic",
-    description: "Un fragment instable arraché au Gardien fissuré.",
-    requiredRank: "D",
-    equippable: true,
-    canEquip: false,
-    stats: [
-      { label: "Puissance", value: "+12" },
-      { label: "Rang requis", value: "D" },
-    ],
-  },
+const BONUS_LABELS: Readonly<Record<keyof ItemBonuses, string>> = {
+  melee: "Corps-à-corps",
+  ranged: "Distance",
+  magic: "Magie",
+  defense: "Défense",
+  energy: "Énergie",
 };
 
 function tileCenter(position: GridPosition) {
@@ -150,36 +105,25 @@ function creatureKind(species: string, isBoss: boolean): CreatureKind {
   return "wolf";
 }
 
-function readJson<T>(key: string, fallback: T): T {
-  try {
-    const value = window.localStorage.getItem(key);
-    return value ? (JSON.parse(value) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeJson(key: string, value: unknown) {
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // Private browsing can disable storage; gameplay must remain available.
-  }
-}
-
-function initialInventory(): HudInventoryItem[] {
-  return [
-    {
-      id: "starter-potion",
-      name: "Petite potion",
-      icon: "◉",
-      quantity: 2,
-      rarity: "common",
-      description: "Une préparation simple qui restaure quelques points de vie.",
-      equippable: false,
-    },
-  ];
-}
+const MONSTER_BEHAVIOUR_COPY: Readonly<
+  Record<MonsterBehaviour, { label: string; color: string; hint: string }>
+> = {
+  passive: {
+    label: "Paisible",
+    color: "#8fd5a6",
+    hint: "paisible · ne vous attaquera pas",
+  },
+  defensive: {
+    label: "Riposte",
+    color: "#efc875",
+    hint: "défensif · riposte seulement si vous l’attaquez",
+  },
+  aggressive: {
+    label: "Agressif",
+    color: "#f08b8b",
+    hint: "agressif · attaque les aventuriers à portée",
+  },
+};
 
 export class WorldScene extends Phaser.Scene {
   private readonly callbacks: WorldCallbacks;
@@ -197,19 +141,27 @@ export class WorldScene extends Phaser.Scene {
   private latestMonsters = new Map<string, MonsterSnapshot>();
   private attackingUntil = new Map<string, number>();
   private followedPlayerId: string | null = null;
-  private inventory: HudInventoryItem[] = [];
-  private equipment: StoredEquipment = {};
+  private equipment: EquipmentSnapshot = { head: null, weapon: null, armor: null, boots: null };
+  private inventorySignature = "";
+  private rewards: HudReward[] = [];
+  private rewardSequence = 0;
   private toastTween: Phaser.Tweens.Tween | null = null;
   private readySent = false;
 
   private readonly equipListener = (event: Event) => {
     const itemId = (event as CustomEvent<{ itemId?: string }>).detail?.itemId;
-    if (itemId) this.equipItem(itemId);
+    if (itemId) this.socket?.equip(itemId);
   };
 
   private readonly unequipListener = (event: Event) => {
-    const slotId = (event as CustomEvent<{ slotId?: keyof StoredEquipment }>).detail?.slotId;
-    if (slotId) this.unequipItem(slotId);
+    const slotId = (event as CustomEvent<{ slotId?: string }>).detail?.slotId;
+    if (slotId && EQUIPMENT_SLOTS.includes(slotId as EquipmentSlot)) {
+      this.socket?.unequip(slotId as EquipmentSlot);
+    }
+  };
+
+  private readonly respawnListener = () => {
+    this.socket?.respawn();
   };
 
   constructor(callbacks: WorldCallbacks) {
@@ -219,8 +171,6 @@ export class WorldScene extends Phaser.Scene {
 
   create() {
     createProceduralAssets(this);
-    this.inventory = readJson(INVENTORY_KEY, initialInventory());
-    this.equipment = readJson(EQUIPMENT_KEY, {});
 
     this.createWorld();
     this.createScreenText();
@@ -229,6 +179,7 @@ export class WorldScene extends Phaser.Scene {
 
     window.addEventListener("ui:equip", this.equipListener);
     window.addEventListener("ui:unequip", this.unequipListener);
+    window.addEventListener("ui:respawn", this.respawnListener);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.shutdownWorld());
 
     const playerName = this.getPlayerName();
@@ -256,7 +207,6 @@ export class WorldScene extends Phaser.Scene {
     );
     this.socket.connect();
 
-    this.publishInventory();
     if (!this.readySent) {
       this.readySent = true;
       this.callbacks.onReady();
@@ -535,10 +485,13 @@ export class WorldScene extends Phaser.Scene {
     camera.setBackgroundColor(0x10151b);
     camera.roundPixels = true;
     this.updateZoom();
-    this.scale.on(Phaser.Scale.Events.RESIZE, () => {
-      this.updateZoom();
-      this.positionScreenText();
-    });
+    this.scale.on(Phaser.Scale.Events.RESIZE, this.handleResize, this);
+  }
+
+  private handleResize(gameSize: Phaser.Structs.Size) {
+    this.cameras.main.setSize(gameSize.width, gameSize.height);
+    this.updateZoom();
+    this.positionScreenText();
   }
 
   private updateZoom() {
@@ -611,7 +564,10 @@ export class WorldScene extends Phaser.Scene {
     }
 
     const localPlayer = this.localPlayerId ? this.latestPlayers.get(this.localPlayerId) : undefined;
-    if (localPlayer) this.publishPlayerHud(localPlayer);
+    if (localPlayer) {
+      this.publishInventory(localPlayer);
+      this.publishPlayerHud(localPlayer);
+    }
   }
 
   private updatePlayerView(player: PlayerSnapshot, immediate: boolean) {
@@ -622,21 +578,26 @@ export class WorldScene extends Phaser.Scene {
       immediate = true;
     }
     const point = tileCenter(player.position);
-    this.moveView(view, point, player.moving, immediate);
+    const positionChanged = this.moveView(view, point, immediate, 220);
     view.label.setText(player.id === this.localPlayerId ? player.name : `${player.name} · ${player.rank}`);
     view.container.setVisible(player.alive).setAlpha(player.alive ? 1 : 0.3);
     this.drawHealth(view, player.hp, player.maxHp);
 
     if ((this.attackingUntil.get(player.id) ?? 0) <= this.time.now) {
+      const visuallyMoving =
+        player.moving || positionChanged || this.tweens.isTweening(view.container);
       view.sprite.play(
-        VISUAL_ANIMATIONS.adventurer(visualDirection(player.direction), player.moving ? "walk" : "idle"),
+        VISUAL_ANIMATIONS.adventurer(
+          visualDirection(player.direction),
+          visuallyMoving ? "walk" : "idle",
+        ),
         true,
       );
     }
     view.selection.setVisible(this.selectedTargetId === player.id);
 
     if (player.id === this.localPlayerId && this.followedPlayerId !== player.id) {
-      this.cameras.main.startFollow(view.container, true, 0.16, 0.16);
+      this.cameras.main.startFollow(view.container, true, 1, 1);
       this.cameras.main.centerOn(point.x, point.y);
       this.followedPlayerId = player.id;
     }
@@ -650,8 +611,12 @@ export class WorldScene extends Phaser.Scene {
       immediate = true;
     }
     const point = tileCenter(monster.position);
-    this.moveView(view, point, monster.moving, immediate);
-    view.label.setText(`${monster.name} · niv. ${monster.level}`);
+    const movementDuration = Math.ceil(monster.moveIntervalMs / 100) * 100;
+    this.moveView(view, point, immediate, movementDuration);
+    const behaviour = MONSTER_BEHAVIOUR_COPY[monster.behaviour];
+    view.label
+      .setText(`${monster.name} · niv. ${monster.level}\n● ${behaviour.label}`)
+      .setColor(monster.isBoss ? "#dba0ff" : behaviour.color);
     view.container.setVisible(monster.alive).setAlpha(monster.alive ? 1 : 0);
     view.sprite.setFlipX(monster.direction === "west");
     if ((this.attackingUntil.get(monster.id) ?? 0) <= this.time.now) {
@@ -699,34 +664,53 @@ export class WorldScene extends Phaser.Scene {
   private createMonsterView(monster: MonsterSnapshot): EntityView {
     const point = tileCenter(monster.position);
     const kind = creatureKind(monster.species, monster.isBoss);
+    const behaviour = MONSTER_BEHAVIOUR_COPY[monster.behaviour];
     const selection = this.add
       .sprite(0, -3, VISUAL_KEYS.effects.selection)
       .setScale(monster.isBoss ? 1.65 : 1)
       .setVisible(false);
     const sprite = this.add
       .sprite(0, 0, creatureTextureKey(kind, 0))
-      .setOrigin(0.5, 1)
+      .setOrigin(0.5, 1);
+    const targetZone = this.add
+      .zone(
+        0,
+        monster.isBoss ? -48 : kind === "slime" ? -18 : -27,
+        monster.isBoss ? 86 : 52,
+        monster.isBoss ? 104 : 58,
+      )
       .setInteractive({ useHandCursor: true });
     const nameY = monster.isBoss ? -101 : kind === "slime" ? -38 : -54;
     const label = this.add
-      .text(0, nameY, monster.name, {
+      .text(0, nameY, `${monster.name} · niv. ${monster.level}\n● ${behaviour.label}`, {
         fontFamily: "system-ui, sans-serif",
         fontSize: monster.isBoss ? "10px" : "8px",
-        color: monster.isBoss ? "#dba0ff" : monster.behaviour === "aggressive" ? "#ef8f8f" : "#e5ddc6",
+        color: monster.isBoss ? "#dba0ff" : behaviour.color,
         backgroundColor: "#090c11c4",
         padding: { x: 3, y: 1 },
+        align: "center",
       })
       .setOrigin(0.5, 1);
     const health = this.add.graphics();
-    const container = this.add.container(point.x, point.y, [selection, sprite, health, label]).setDepth(point.y);
+    const container = this.add
+      .container(point.x, point.y, [selection, targetZone, sprite, health, label])
+      .setDepth(point.y);
 
-    sprite.on(Phaser.Input.Events.POINTER_DOWN, (_pointer: Phaser.Input.Pointer, _x: number, _y: number, event: Phaser.Types.Input.EventData) => {
-      event.stopPropagation();
-      this.selectedTargetId = monster.id;
-      this.refreshSelections();
-      this.socket?.target(monster.id);
-      this.showToast(`${monster.name} ciblé · déplacement automatique vers la portée`);
-    });
+    targetZone.on(
+      Phaser.Input.Events.POINTER_UP,
+      (
+        _pointer: Phaser.Input.Pointer,
+        _x: number,
+        _y: number,
+        event: Phaser.Types.Input.EventData,
+      ) => {
+        event.stopPropagation();
+        this.selectedTargetId = monster.id;
+        this.refreshSelections();
+        this.socket?.target(monster.id);
+        this.showToast(`${monster.name} ciblé · ${behaviour.hint}`);
+      },
+    );
 
     return {
       container,
@@ -744,25 +728,29 @@ export class WorldScene extends Phaser.Scene {
   private moveView(
     view: EntityView,
     point: { x: number; y: number },
-    moving: boolean,
     immediate: boolean,
+    durationMs: number,
   ) {
     const newTile = { x: Math.floor(point.x / TILE), y: Math.floor((point.y - 1) / TILE) };
+    const changedTile =
+      !view.lastTile || view.lastTile.x !== newTile.x || view.lastTile.y !== newTile.y;
     if (immediate || !view.lastTile) {
+      this.tweens.killTweensOf(view.container);
       view.container.setPosition(point.x, point.y);
-    } else if (view.container.x !== point.x || view.container.y !== point.y) {
+    } else if (changedTile) {
       this.tweens.killTweensOf(view.container);
       this.tweens.add({
         targets: view.container,
         x: point.x,
         y: point.y,
-        duration: moving ? 185 : 110,
+        duration: Phaser.Math.Clamp(durationMs, 150, 800),
         ease: "Linear",
         onUpdate: () => view.container.setDepth(view.container.y),
       });
     }
-    view.container.setDepth(point.y);
+    if (immediate) view.container.setDepth(point.y);
     view.lastTile = newTile;
+    return changedTile && !immediate;
   }
 
   private drawHealth(view: EntityView, hp: number, maxHp: number) {
@@ -787,10 +775,16 @@ export class WorldScene extends Phaser.Scene {
     if (event.type === "death") {
       const monster = this.latestMonsters.get(event.entityId);
       if (monster) this.showToast(`${monster.name} vaincu !`, 0xf1ca70);
+      if (event.entityId === this.localPlayerId) {
+        this.callbacks.onHud({ alive: false });
+        this.showToast("Vous êtes tombé au combat", 0xf08b8b);
+      }
       return;
     }
     if (event.type === "xp" && event.playerId === this.localPlayerId) {
-      const text = event.general > 0 ? `+${event.general} XP de perfectionnement` : `+${event.masteryXp} XP ${event.mastery ?? "statistique"}`;
+      const text = event.general > 0
+        ? `+${event.general} XP générale`
+        : `+${event.masteryXp} XP ${event.mastery ?? "statistique"}`;
       this.showToast(text, 0x8ee6ff);
       return;
     }
@@ -803,6 +797,7 @@ export class WorldScene extends Phaser.Scene {
       return;
     }
     if (event.type === "respawn" && event.entityId === this.localPlayerId) {
+      this.callbacks.onHud({ alive: true });
       this.showToast("Vous reprenez connaissance au Val d’Aube", 0x8ee6ff);
     }
   }
@@ -863,10 +858,11 @@ export class WorldScene extends Phaser.Scene {
         id: "energy",
         label: "Énergie",
         icon: "◆",
+        description: "Renforce les réserves de vie et de mana.",
         base: player.level,
         training: 0,
-        equipment: this.equipmentBonus("Énergie"),
-        total: player.level + this.equipmentBonus("Énergie"),
+        equipment: this.equipmentBonus("energy"),
+        total: player.level + this.equipmentBonus("energy"),
       },
     ];
     this.callbacks.onHud({
@@ -878,8 +874,9 @@ export class WorldScene extends Phaser.Scene {
       maxXp: player.xpToNext,
       level: player.level,
       rank: player.rank === "OMEGA" ? "Ω" : player.rank,
-      power: player.power + this.equipmentBonus("Puissance"),
+      power: player.power,
       playerName: `${player.name} · ${player.className}`,
+      alive: player.alive,
       stats,
     });
   }
@@ -891,11 +888,18 @@ export class WorldScene extends Phaser.Scene {
     base: number,
     mastery: { level: number; xp: number; xpToNext: number },
   ): HudStatBreakdown {
-    const equipment = this.equipmentBonus(label);
+    const equipment = this.equipmentBonus(id as keyof ItemBonuses);
+    const descriptions: Readonly<Record<string, string>> = {
+      melee: "Augmente les dégâts des attaques au corps à corps.",
+      ranged: "Augmente les dégâts des attaques à distance.",
+      magic: "Augmente la puissance des sorts magiques.",
+      defense: "Réduit les dégâts reçus au combat.",
+    };
     return {
       id,
       label,
       icon,
+      description: descriptions[id],
       base,
       training: mastery.level,
       equipment,
@@ -905,79 +909,92 @@ export class WorldScene extends Phaser.Scene {
     };
   }
 
-  private equipmentBonus(label: string) {
+  private equipmentBonus(stat: keyof ItemBonuses) {
     let total = 0;
-    for (const item of Object.values(this.equipment)) {
-      for (const stat of item?.stats ?? []) {
-        if (stat.label !== label && !(label === "Corps-à-corps" && stat.label === "Puissance")) continue;
-        const value = Number(String(stat.value).replace(/[^0-9.-]/g, ""));
-        if (Number.isFinite(value)) total += value;
-      }
+    for (const itemId of Object.values(this.equipment)) {
+      if (!itemId || !isKnownItem(itemId)) continue;
+      const definition: ItemDefinition = ITEM_CATALOG[itemId];
+      total += definition.bonuses?.[stat] ?? 0;
     }
     return total;
   }
 
   private addLoot(itemId: string, quantity: number) {
-    const definition = ITEM_DEFINITIONS[itemId] ?? {
+    const definition: ItemDefinition = isKnownItem(itemId) ? ITEM_CATALOG[itemId] : {
       id: itemId,
       name: "Butin mystérieux",
       icon: "◆",
-      rarity: "common" as const,
       description: "Un objet trouvé sur un monstre.",
-      equippable: false,
+      kind: "material",
+      rarity: "common",
     };
-    const existing = this.inventory.find((item) => item.id === itemId);
-    if (existing) existing.quantity = (existing.quantity ?? 1) + quantity;
-    else this.inventory.push({ ...definition, quantity });
-    writeJson(INVENTORY_KEY, this.inventory);
-    this.publishInventory();
+    const reward: HudReward = {
+      id: `${itemId}-${this.time.now}-${this.rewardSequence++}`,
+      name: definition.name,
+      icon: definition.icon ?? "◆",
+      quantity,
+      rarity: definition.rarity,
+    };
+    this.rewards = [...this.rewards, reward].slice(-2);
+    this.callbacks.onHud({ rewards: [...this.rewards] });
+    this.time.delayedCall(5_000, () => {
+      this.rewards = this.rewards.filter((entry) => entry.id !== reward.id);
+      this.callbacks.onHud({ rewards: [...this.rewards] });
+    });
     this.showToast(`${definition.name} ×${quantity} obtenu`, 0xcfa2ff);
   }
 
-  private equipItem(itemId: string) {
-    const item = this.inventory.find((candidate) => candidate.id === itemId);
-    const slot = ITEM_SLOTS[itemId];
-    if (!item || !slot || item.canEquip === false) {
-      this.showToast(item?.requiredRank ? `Rang ${item.requiredRank} requis` : "Cet objet ne peut pas être équipé", 0xf0a46d);
-      return;
-    }
-    const previous = this.equipment[slot];
-    if (previous) {
-      const previousInventory = this.inventory.find((candidate) => candidate.id === previous.id);
-      if (previousInventory) previousInventory.equipped = false;
-    }
-    item.equipped = true;
-    this.equipment[slot] = { ...item, equipped: true };
-    this.persistEquipment();
-    this.showToast(`${item.name} équipé`, 0xf3cf78);
-  }
-
-  private unequipItem(slot: keyof StoredEquipment) {
-    const item = this.equipment[slot];
-    if (!item) return;
-    const inventoryItem = this.inventory.find((candidate) => candidate.id === item.id);
-    if (inventoryItem) inventoryItem.equipped = false;
-    delete this.equipment[slot];
-    this.persistEquipment();
-    this.showToast(`${item.name} retiré`);
-  }
-
-  private persistEquipment() {
-    writeJson(INVENTORY_KEY, this.inventory);
-    writeJson(EQUIPMENT_KEY, this.equipment);
-    this.publishInventory();
-    const player = this.localPlayerId ? this.latestPlayers.get(this.localPlayerId) : undefined;
-    if (player) this.publishPlayerHud(player);
-  }
-
-  private publishInventory() {
-    const slots: HudEquipmentSlot[] = (Object.keys(EQUIPMENT_LABELS) as Array<keyof StoredEquipment>).map((slot) => ({
-      id: slot,
-      label: EQUIPMENT_LABELS[slot],
-      icon: EQUIPMENT_ICONS[slot],
-      item: this.equipment[slot] ?? null,
+  private inventoryItem(
+    definition: ItemDefinition,
+    quantity: number,
+    equipped: boolean,
+    player: PlayerSnapshot,
+  ): HudInventoryItem {
+    const stats = Object.entries(definition.bonuses ?? {}).map(([key, value]) => ({
+      label: BONUS_LABELS[key as keyof ItemBonuses],
+      value: `+${value}`,
     }));
-    this.callbacks.onHud({ inventory: [...this.inventory], equipment: slots });
+    return {
+      id: definition.id,
+      name: definition.name,
+      icon: definition.icon,
+      quantity,
+      rarity: definition.rarity,
+      description: definition.description,
+      requiredRank: definition.requiredRank,
+      equipped,
+      equippable: definition.kind === "equipment",
+      canEquip:
+        definition.kind === "equipment" &&
+        meetsItemRank(player.rank, definition.requiredRank),
+      stats,
+    };
+  }
+
+  private publishInventory(player: PlayerSnapshot) {
+    this.equipment = player.equipment;
+    const signature = JSON.stringify([player.inventory, player.equipment, player.rank]);
+    if (signature === this.inventorySignature) return;
+    this.inventorySignature = signature;
+
+    const equippedIds = new Set(Object.values(player.equipment).filter(Boolean));
+    const inventory = player.inventory.flatMap(({ itemId, quantity }) => {
+      if (!isKnownItem(itemId) || quantity <= 0) return [];
+      const definition: ItemDefinition = ITEM_CATALOG[itemId];
+      return [this.inventoryItem(definition, quantity, equippedIds.has(itemId), player)];
+    });
+    const equipment: HudEquipmentSlot[] = EQUIPMENT_SLOTS.map((slot) => {
+      const itemId = player.equipment[slot];
+      const definition: ItemDefinition | null =
+        itemId && isKnownItem(itemId) ? ITEM_CATALOG[itemId] : null;
+      return {
+        id: slot,
+        label: EQUIPMENT_LABELS[slot],
+        icon: EQUIPMENT_ICONS[slot],
+        item: definition ? this.inventoryItem(definition, 1, true, player) : null,
+      };
+    });
+    this.callbacks.onHud({ inventory, equipment });
   }
 
   private showToast(message: string, color = 0xf4ead4) {
@@ -1007,8 +1024,10 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private shutdownWorld() {
+    this.scale.off(Phaser.Scale.Events.RESIZE, this.handleResize, this);
     window.removeEventListener("ui:equip", this.equipListener);
     window.removeEventListener("ui:unequip", this.unequipListener);
+    window.removeEventListener("ui:respawn", this.respawnListener);
     this.socket?.close();
     this.socket = null;
   }

@@ -6,6 +6,7 @@ import {
   type ReactNode,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -50,10 +51,19 @@ export interface HudEquipmentSlot {
   item?: HudInventoryItem | null;
 }
 
+export interface HudReward {
+  id: string;
+  name: string;
+  icon: string;
+  quantity?: number;
+  rarity?: HudItemRarity;
+}
+
 export interface HudStatBreakdown {
   id: string;
   label: string;
   icon?: string;
+  description?: string;
   base: number;
   training?: number;
   equipment?: number;
@@ -79,12 +89,15 @@ export interface HudProps {
   inventoryCapacity?: number;
   equipment?: HudEquipmentSlot[];
   stats?: HudStatBreakdown[];
+  rewards?: HudReward[];
+  alive?: boolean;
   activePanel?: HudPanel;
   onPanelChange?: (panel: HudPanel) => void;
   onPanelClose?: (panel: Exclude<HudPanel, null>) => void;
   onEquip?: (itemId: string) => void;
   onUnequip?: (slotId: string) => void;
   onSkillActivate?: (skillId: string) => void;
+  onRespawn?: () => void;
 }
 
 type MeterTone = "health" | "mana" | "xp";
@@ -114,6 +127,49 @@ const RARITY_LABELS: Record<HudItemRarity, string> = {
   rare: "Rare",
   epic: "Épique",
   legendary: "Légendaire",
+};
+
+const RANK_BONUSES: Readonly<Record<string, number>> = {
+  E: 5,
+  D: 10,
+  C: 15,
+  B: 25,
+  A: 35,
+  S: 50,
+  SS: 65,
+  SSS: 80,
+  OMEGA: 100,
+  "Ω": 100,
+};
+
+const EQUIPMENT_LAYOUT = [
+  { id: "head", label: "Coiffe", icon: "♢", className: "equipmentSlotHead" },
+  { id: "weapon", label: "Arme", icon: "⚔", className: "equipmentSlotWeapon" },
+  { id: "armor", label: "Armure", icon: "♜", className: "equipmentSlotArmor" },
+  { id: "boots", label: "Bottes", icon: "⌁", className: "equipmentSlotBoots" },
+] as const;
+
+const STAT_PRESENTATION: Record<string, { icon: string; description: string }> = {
+  melee: {
+    icon: "⚔",
+    description: "Augmente les dégâts au corps à corps.",
+  },
+  ranged: {
+    icon: "➶",
+    description: "Augmente les dégâts des attaques à distance.",
+  },
+  magic: {
+    icon: "✦",
+    description: "Augmente la puissance des sorts magiques.",
+  },
+  defense: {
+    icon: "🛡",
+    description: "Réduit les dégâts reçus au combat.",
+  },
+  energy: {
+    icon: "⚡",
+    description: "Renforce les réserves de vie et de mana.",
+  },
 };
 
 function clampRatio(value: number, maximum: number) {
@@ -287,74 +343,197 @@ function InventoryPanel({
 
 function EquipmentPanel({
   slots,
+  inventory,
+  onEquip,
   onUnequip,
 }: {
   slots: HudEquipmentSlot[];
+  inventory: HudInventoryItem[];
+  onEquip?: (itemId: string) => void;
   onUnequip?: (slotId: string) => void;
 }) {
-  if (!slots.length) {
-    return <p className={styles.emptyState}>Aucun emplacement d’équipement disponible.</p>;
-  }
+  const stageRef = useRef<HTMLDivElement>(null);
+  const slotById = new Map(slots.map((slot) => [slot.id.toLowerCase(), slot]));
+  const placedSlotIds = new Set<string>();
+  const layoutSlots = EQUIPMENT_LAYOUT.map((layout) => {
+    const aliases =
+      layout.id === "head"
+        ? ["head", "helmet", "coiffe"]
+        : layout.id === "armor"
+          ? ["armor", "armour", "chest", "torso"]
+          : layout.id === "boots"
+            ? ["boots", "feet", "shoes"]
+            : ["weapon", "mainhand", "main-hand"];
+    const slot = aliases.map((alias) => slotById.get(alias)).find(Boolean);
+    if (slot) {
+      placedSlotIds.add(slot.id);
+    }
+    return {
+      ...layout,
+      slot: slot ?? { id: layout.id, label: layout.label, icon: layout.icon, item: null },
+    };
+  });
+  const extraSlots = slots.filter((slot) => !placedSlotIds.has(slot.id));
+  const equippableItems = inventory.filter((item) => item.equippable !== false);
 
   return (
-    <div className={styles.equipmentList}>
-      {slots.map((slot) => (
-        <article className={styles.equipmentRow} key={slot.id}>
-          <span className={styles.equipmentIcon} aria-hidden="true">
-            {slot.item?.icon ?? slot.icon ?? "◇"}
-          </span>
-          <div className={styles.equipmentCopy}>
-            <span className={styles.equipmentLabel}>{slot.label}</span>
-            <strong>{slot.item?.name ?? "Emplacement vide"}</strong>
-            {slot.item?.requiredRank ? <small>Rang {slot.item.requiredRank}</small> : null}
-          </div>
-          {slot.item ? (
+    <div className={styles.equipmentPanelBody}>
+      <div
+        className={styles.equipmentStage}
+        aria-label="Équipement porté par le personnage"
+        ref={stageRef}
+      >
+        <div className={styles.mannequin} aria-hidden="true">
+          <span className={styles.mannequinHead} />
+          <span className={styles.mannequinBody} />
+          <span className={styles.mannequinArmLeft} />
+          <span className={styles.mannequinArmRight} />
+          <span className={styles.mannequinLegLeft} />
+          <span className={styles.mannequinLegRight} />
+          <span className={styles.mannequinAura} />
+          {layoutSlots.map(({ id, slot }) =>
+            slot.item ? (
+              <span
+                className={`${styles.mannequinEquipped} ${styles[`mannequinEquipped_${id}`]}`}
+                key={`worn-${id}`}
+              >
+                {slot.item.icon ?? slot.icon ?? "◆"}
+              </span>
+            ) : null,
+          )}
+        </div>
+
+        {layoutSlots.map(({ className, slot }) => {
+          const item = slot.item;
+          return (
             <button
               type="button"
-              className={styles.ghostAction}
-              onClick={() => onUnequip?.(slot.id)}
-              aria-label={`Retirer ${slot.item.name}`}
+              className={`${styles.equipmentSlotCard} ${styles[className]}`}
+              key={slot.id}
+              disabled={!item}
+              onClick={() => item && onUnequip?.(slot.id)}
+              aria-label={item ? `${slot.label} : ${item.name}. Toucher pour retirer.` : `${slot.label} vide`}
             >
-              Retirer
+              <span className={styles.equipmentSlotLabel}>{slot.label}</span>
+              <span className={styles.equipmentSlotIcon} aria-hidden="true">
+                {item?.icon ?? slot.icon ?? "◇"}
+              </span>
+              <strong>{item?.name ?? "Vide"}</strong>
+              {item ? <small>Toucher pour retirer</small> : <small>Emplacement libre</small>}
             </button>
-          ) : null}
-        </article>
-      ))}
+          );
+        })}
+      </div>
+
+      {extraSlots.length ? (
+        <div className={styles.extraEquipmentSlots}>
+          {extraSlots.map((slot) => (
+            <button
+              type="button"
+              className={styles.extraEquipmentSlot}
+              key={slot.id}
+              disabled={!slot.item}
+              onClick={() => slot.item && onUnequip?.(slot.id)}
+            >
+              <span aria-hidden="true">{slot.item?.icon ?? slot.icon ?? "◇"}</span>
+              <span>{slot.label}</span>
+              <strong>{slot.item?.name ?? "Vide"}</strong>
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      <section className={styles.equipmentInventory} aria-labelledby="equippable-items-title">
+        <div className={styles.sectionHeading}>
+          <span id="equippable-items-title">Objets équipables</span>
+          <span className={styles.capacity}>{equippableItems.length}</span>
+        </div>
+        {equippableItems.length ? (
+          <div className={styles.equipmentInventoryGrid}>
+            {equippableItems.map((item) => (
+              <button
+                type="button"
+                key={item.id}
+                className={`${styles.equipmentInventoryItem} ${styles[`rarity_${item.rarity ?? "common"}`]}`}
+                disabled={item.equipped || item.canEquip === false}
+                onClick={() => {
+                  onEquip?.(item.id);
+                  stageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+                aria-label={
+                  item.equipped
+                    ? `${item.name}, déjà équipé`
+                    : item.canEquip === false
+                      ? `${item.name}, rang insuffisant`
+                      : `Équiper ${item.name}`
+                }
+              >
+                <span aria-hidden="true">{item.icon ?? "◆"}</span>
+                <span className={styles.equipmentInventoryCopy}>
+                  <strong>{item.name}</strong>
+                  <small>
+                    {item.equipped ? "Équipé" : item.canEquip === false ? "Rang insuffisant" : "Toucher pour équiper"}
+                  </small>
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className={styles.panelHint}>Aucun équipement dans le sac pour le moment.</p>
+        )}
+      </section>
     </div>
   );
 }
 
-function StatsPanel({ stats }: { stats: HudStatBreakdown[] }) {
+function StatsPanel({ stats, rank }: { stats: HudStatBreakdown[]; rank: string }) {
   if (!stats.length) {
     return <p className={styles.emptyState}>Les statistiques seront disponibles prochainement.</p>;
   }
 
   return (
     <div className={styles.statsList}>
+      <aside className={styles.rankBonus} aria-label={`Bonus du rang ${rank}`}>
+        <span>
+          <small>Bonus permanent du rang {rank}</small>
+          Dégâts · PV · Défense
+        </span>
+        <strong>+{RANK_BONUSES[rank.toUpperCase()] ?? 0}%</strong>
+      </aside>
       {stats.map((stat) => {
         const hasTraining = typeof stat.xp === "number" && typeof stat.xpToNext === "number";
+        const presentation = STAT_PRESENTATION[stat.id.toLowerCase()];
         return (
           <article className={styles.statCard} key={stat.id}>
             <div className={styles.statTopline}>
               <span className={styles.statIcon} aria-hidden="true">
-                {stat.icon ?? "✦"}
+                {presentation?.icon ?? stat.icon ?? "✦"}
               </span>
-              <strong>{stat.label}</strong>
-              <span className={styles.statTotal}>{formatCompact(stat.total)}</span>
+              <div className={styles.statIdentity}>
+                <strong>{stat.label}</strong>
+                <p>{stat.description ?? presentation?.description ?? "Améliore votre efficacité en combat."}</p>
+              </div>
+              <span className={styles.statTotal} aria-label={`${stat.label} totale : ${formatCompact(stat.total)}`}>
+                <small>Total</small>
+                {formatCompact(stat.total)}
+              </span>
             </div>
             <div className={styles.statBreakdown}>
-              <span>Base {formatCompact(stat.base)}</span>
-              <span>Entraînement +{formatCompact(stat.training ?? 0)}</span>
-              <span>Équipement +{formatCompact(stat.equipment ?? 0)}</span>
+              <span><small>Base</small>{formatCompact(stat.base)}</span>
+              <span><small>Combat</small>+{formatCompact(stat.training ?? 0)}</span>
+              <span><small>Équipement</small>+{formatCompact(stat.equipment ?? 0)}</span>
             </div>
             {hasTraining ? (
-              <div className={styles.trainingRow}>
+              <div className={styles.trainingRow} aria-label={`Progression de ${stat.label}`}>
+                <div className={styles.trainingLabel}>
+                  <span>Progression au combat</span>
+                  <small>
+                    {formatCompact(stat.xp ?? 0)} / {formatCompact(stat.xpToNext ?? 0)} XP
+                  </small>
+                </div>
                 <div className={styles.trainingTrack} style={meterStyle(stat.xp ?? 0, stat.xpToNext ?? 0)}>
                   <span />
                 </div>
-                <small>
-                  {formatCompact(stat.xp ?? 0)} / {formatCompact(stat.xpToNext ?? 0)} XP
-                </small>
               </div>
             ) : (
               <small className={styles.levelOnly}>Progression par niveau général</small>
@@ -383,12 +562,15 @@ export default function Hud({
   inventoryCapacity = 20,
   equipment = [],
   stats = [],
+  rewards = [],
+  alive = true,
   activePanel,
   onPanelChange,
   onPanelClose,
   onEquip,
   onUnequip,
   onSkillActivate,
+  onRespawn,
 }: HudProps) {
   const [internalPanel, setInternalPanel] = useState<HudPanel>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -426,21 +608,23 @@ export default function Hud({
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        if (panel) {
-          closePanel();
-        } else {
-          setMenuOpen(false);
-        }
-      }
+      if (event.key !== "Escape") return;
+      setMenuOpen(false);
+      if (!panel) return;
+      if (activePanel === undefined) setInternalPanel(null);
+      onPanelClose?.(panel);
+      onPanelChange?.(null);
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  });
+  }, [activePanel, onPanelChange, onPanelClose, panel]);
 
   return (
-    <div className={styles.hud} aria-label="Interface du jeu">
+    <div
+      className={`${styles.hud} ${panel ? styles.hudPanelOpen : ""}`}
+      aria-label="Interface du jeu"
+    >
       <HudSurface className={styles.playerCard}>
         <div className={styles.identityRow}>
           <span className={styles.avatar} aria-hidden="true">
@@ -500,6 +684,24 @@ export default function Hud({
         })}
       </HudSurface>
 
+      {rewards.length ? (
+        <div className={styles.rewardFeed} aria-live="polite" aria-label="Butin récemment obtenu">
+          {rewards.slice(-2).map((reward) => (
+            <article
+              className={`${styles.rewardCard} ${styles[`rarity_${reward.rarity ?? "common"}`]}`}
+              key={reward.id}
+            >
+              <span className={styles.rewardIcon} aria-hidden="true">{reward.icon}</span>
+              <span className={styles.rewardCopy}>
+                <small>Butin obtenu</small>
+                <strong>{reward.name}</strong>
+              </span>
+              <span className={styles.rewardQuantity}>×{reward.quantity ?? 1}</span>
+            </article>
+          ))}
+        </div>
+      ) : null}
+
       <HudSurface className={styles.menuDock}>
         {menuOpen ? (
           <nav className={styles.quickMenu} aria-label="Menu du personnage">
@@ -552,12 +754,25 @@ export default function Hud({
             ))}
           </nav>
 
-          <div className={styles.panelScroller}>
+          <div className={styles.panelScroller} key={panel}>
             {panel === "inventory" ? (
               <InventoryPanel items={inventory} capacity={inventoryCapacity} onEquip={onEquip} />
             ) : null}
-            {panel === "equipment" ? <EquipmentPanel slots={equipment} onUnequip={onUnequip} /> : null}
-            {panel === "stats" ? <StatsPanel stats={stats} /> : null}
+            {panel === "equipment" ? (
+              <EquipmentPanel slots={equipment} inventory={inventory} onEquip={onEquip} onUnequip={onUnequip} />
+            ) : null}
+            {panel === "stats" ? <StatsPanel stats={stats} rank={rank} /> : null}
+          </div>
+        </HudSurface>
+      ) : null}
+
+      {!alive ? (
+        <HudSurface className={styles.deathOverlay}>
+          <div className={styles.deathCard} role="dialog" aria-modal="true" aria-labelledby="death-title">
+            <span className={styles.deathRune} aria-hidden="true">◇</span>
+            <p>Votre aventure n’est pas terminée</p>
+            <h2 id="death-title">Vous êtes tombé au combat</h2>
+            <button type="button" onClick={onRespawn}>Réapparaître en ville</button>
           </div>
         </HudSurface>
       ) : null}
