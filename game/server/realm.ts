@@ -120,6 +120,7 @@ interface RuntimePlayer {
   mp: number;
   level: number;
   xp: number;
+  gold: number;
   rank: PlayerRank | null;
   combatPath: CombatPath;
   className: string;
@@ -357,6 +358,7 @@ export class InMemoryRealm {
     }
     if (message.type === "equip") this.requestEquip(player, message.itemId, message.sequence);
     if (message.type === "unequip") this.requestUnequip(player, message.slot, message.sequence);
+    if (message.type === "use-item") this.requestUseItem(player, message.itemId, message.sequence);
   }
 
   /** Public for deterministic tests; production uses the internal interval. */
@@ -473,6 +475,7 @@ export class InMemoryRealm {
       mp: playerMaxMp(1),
       level: 1,
       xp: 0,
+      gold: 0,
       // Reaching level 10 only unlocks the future headquarters interaction.
       // A rank and combat path must never be assigned automatically.
       rank: null,
@@ -511,6 +514,7 @@ export class InMemoryRealm {
   private restorePlayer(player: RuntimePlayer, saved: PersistedPlayerProfile): void {
     player.level = Math.max(1, Math.floor(saved.level));
     player.xp = Math.min(Math.max(0, Math.floor(saved.xp)), generalXpToNext(player.level) - 1);
+    player.gold = Math.max(0, Math.floor(saved.gold));
 
     const hasAwakenedPath = saved.rank !== null && saved.combatPath !== "adventurer";
     player.rank = hasAwakenedPath ? saved.rank : null;
@@ -1063,6 +1067,45 @@ export class InMemoryRealm {
     const oldMaxMp = this.playerMaxMp(player);
     player.equipment[slot] = null;
     this.adjustVitalsAfterEquipmentChange(player, oldMaxHp, oldMaxMp);
+    this.broadcastSnapshot();
+  }
+
+  private requestUseItem(player: RuntimePlayer, itemId: string, sequence: number): void {
+    if (!isKnownItem(itemId)) {
+      this.sendPlayerError(player, "UNKNOWN_ITEM", "Cet objet est inconnu.", sequence);
+      return;
+    }
+    const definition = ITEM_CATALOG[itemId];
+    if (definition.kind !== "consumable" || !definition.healAmount) {
+      this.sendPlayerError(player, "ITEM_NOT_USABLE", "Cet objet ne peut pas être utilisé.", sequence);
+      return;
+    }
+    if (!player.alive) {
+      this.sendPlayerError(player, "PLAYER_DEAD", "Vous devez d’abord réapparaître.", sequence);
+      return;
+    }
+    if ((player.inventory[itemId] ?? 0) < 1) {
+      this.sendPlayerError(player, "ITEM_NOT_OWNED", "Cet objet n’est pas dans votre inventaire.", sequence);
+      return;
+    }
+
+    const maximum = this.playerMaxHp(player);
+    if (player.hp >= maximum) {
+      this.sendPlayerError(player, "FULL_HEALTH", "Vos points de vie sont déjà au maximum.", sequence);
+      return;
+    }
+
+    const previousHp = player.hp;
+    player.hp = Math.min(maximum, player.hp + definition.healAmount);
+    player.inventory[itemId] -= 1;
+    if (player.inventory[itemId] <= 0) delete player.inventory[itemId];
+    this.sendEventToPlayer(player, {
+      type: "item-used",
+      playerId: player.id,
+      itemId,
+      quantity: 1,
+      effectAmount: player.hp - previousHp,
+    });
     this.broadcastSnapshot();
   }
 
@@ -1745,6 +1788,7 @@ export class InMemoryRealm {
         defense,
         energy,
       }),
+      gold: player.gold,
       speed: playerSpeed(player.level),
       masteries: {
         melee: {

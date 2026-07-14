@@ -45,6 +45,11 @@ export const clientMessageSchema = z.discriminatedUnion("type", [
     ...sequenced,
   }),
   z.object({
+    type: z.literal("use-item"),
+    itemId: z.string().min(1).max(80),
+    ...sequenced,
+  }),
+  z.object({
     type: z.literal("ping"),
     clientTime: z.number().finite(),
   }),

@@ -490,6 +490,36 @@ describe("authoritative in-memory realm", () => {
     });
   });
 
+  it("uses a healing potion authoritatively and preserves it at full health", () => {
+    const messages: ServerMessage[] = [];
+    const realm = new InMemoryRealm({ autoStart: false });
+    realm.registerPeer("peer-1", (message) => messages.push(message));
+    realm.joinPeer("peer-1", { type: "join", name: "Testeur" });
+    const { player } = runtimeState(realm);
+    player.hp = 20;
+
+    realm.handleMessage("peer-1", { type: "use-item", itemId: "starter-potion", sequence: 0 });
+
+    const healed = realm.snapshot().players[0];
+    expect(healed.hp).toBe(55);
+    expect(healed.inventory.find((entry) => entry.itemId === "starter-potion")?.quantity).toBe(1);
+    expect(
+      messages.some(
+        (message) =>
+          message.type === "event" &&
+          message.event.type === "item-used" &&
+          message.event.effectAmount === 35,
+      ),
+    ).toBe(true);
+
+    player.hp = healed.maxHp;
+    realm.handleMessage("peer-1", { type: "use-item", itemId: "starter-potion", sequence: 1 });
+    expect(realm.snapshot().players[0].inventory.find((entry) => entry.itemId === "starter-potion")?.quantity).toBe(1);
+    expect(
+      messages.some((message) => message.type === "error" && message.code === "FULL_HEALTH"),
+    ).toBe(true);
+  });
+
   it("applies weapon and armor bonuses to real combat damage", () => {
     function firstPlayerHit(equipWeapon: boolean): number {
       let now = 0;

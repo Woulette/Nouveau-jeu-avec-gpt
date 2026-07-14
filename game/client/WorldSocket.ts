@@ -165,6 +165,10 @@ export class WorldSocket {
     this.send({ type: "unequip", slot, sequence: this.nextSequence() });
   }
 
+  useItem(itemId: string) {
+    this.send({ type: "use-item", itemId, sequence: this.nextSequence() });
+  }
+
   private nextSequence() {
     this.sequence += 1;
     return this.sequence;

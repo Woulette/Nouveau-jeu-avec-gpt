@@ -27,6 +27,7 @@ interface GameHudState {
   level: number;
   rank: string | null;
   power: number;
+  gold: number;
   connectionStatus: HudConnectionStatus;
   playerName: string;
   inventory: HudInventoryItem[];
@@ -159,6 +160,7 @@ export default function GameShell() {
     level: 1,
     rank: null,
     power: 70,
+    gold: 0,
     connectionStatus: "connecting" as HudConnectionStatus,
     playerName: "Aventurier",
     inventory: initialInventory,
@@ -218,6 +220,7 @@ export default function GameShell() {
         inventoryCapacity={20}
         onEquip={(itemId) => dispatchToGame("ui:equip", { itemId })}
         onUnequip={(slotId) => dispatchToGame("ui:unequip", { slotId })}
+        onUseItem={(itemId) => dispatchToGame("ui:use-item", { itemId })}
         onSkillActivate={(skillId) => dispatchToGame("ui:skill", { skillId })}
         onRespawn={() => dispatchToGame("ui:respawn", {})}
         onConnectionModeChange={(mode) => {

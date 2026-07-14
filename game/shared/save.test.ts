@@ -14,6 +14,7 @@ const validProfile: PersistedPlayerProfile = {
   mp: 35,
   level: 2,
   xp: 12,
+  gold: 87,
   rank: null,
   combatPath: "adventurer",
   className: "Aventurier",
@@ -40,6 +41,12 @@ describe("versioned player saves", () => {
     expect(
       localPlayerSaveSchema.parse({ version: 2, savedAt: 123, profile: validProfile }),
     ).toMatchObject({ version: 2, savedAt: 123 });
+  });
+
+  it("migrates an existing v2 profile without currency to zero gold", () => {
+    const legacyProfile: Partial<PersistedPlayerProfile> = { ...validProfile };
+    delete legacyProfile.gold;
+    expect(persistedPlayerProfileSchema.parse(legacyProfile).gold).toBe(0);
   });
 
   it("rejects unknown save versions and unreasonable quantities", () => {

@@ -191,6 +191,11 @@ export class WorldScene extends Phaser.Scene {
     }
   };
 
+  private readonly useItemListener = (event: Event) => {
+    const itemId = (event as CustomEvent<{ itemId?: string }>).detail?.itemId;
+    if (itemId) this.socket?.useItem(itemId);
+  };
+
   private readonly respawnListener = () => {
     this.socket?.respawn();
   };
@@ -232,6 +237,7 @@ export class WorldScene extends Phaser.Scene {
 
     window.addEventListener("ui:equip", this.equipListener);
     window.addEventListener("ui:unequip", this.unequipListener);
+    window.addEventListener("ui:use-item", this.useItemListener);
     window.addEventListener("ui:respawn", this.respawnListener);
     window.addEventListener("ui:connection-mode", this.connectionModeListener);
     window.addEventListener("pagehide", this.pageHideListener);
@@ -616,8 +622,8 @@ export class WorldScene extends Phaser.Scene {
   private updateZoom() {
     const { width, height } = this.scale.gameSize;
     const portrait = height > width;
-    const zoom = portrait ? 1.02 : width < 700 ? 1.08 : 1.2;
-    this.cameras.main.setZoom(zoom);
+    const baseZoom = portrait ? 1.02 : width < 700 ? 1.08 : 1.2;
+    this.cameras.main.setZoom(baseZoom * 0.9);
   }
 
   private positionScreenText() {
@@ -1065,6 +1071,14 @@ export class WorldScene extends Phaser.Scene {
       this.addLoot(event.itemId, event.quantity);
       return;
     }
+    if (event.type === "item-used" && event.playerId === this.localPlayerId) {
+      const definition = isKnownItem(event.itemId) ? ITEM_CATALOG[event.itemId] : null;
+      this.showToast(
+        `${definition?.name ?? "Objet"} utilisé · +${event.effectAmount} PV`,
+        0x65ddbd,
+      );
+      return;
+    }
     if (event.type === "respawn" && event.entityId === this.localPlayerId) {
       this.callbacks.onHud({ alive: true });
       this.showToast("Vous reprenez connaissance au Val d’Aube", 0x8ee6ff);
@@ -1192,6 +1206,7 @@ export class WorldScene extends Phaser.Scene {
       level: player.level,
       rank: player.rank === "OMEGA" ? "Ω" : player.rank,
       power: player.power,
+      gold: player.gold,
       playerName: `${player.name} · ${player.className}`,
       alive: player.alive,
       stats,
@@ -1350,6 +1365,7 @@ export class WorldScene extends Phaser.Scene {
     this.scale.off(Phaser.Scale.Events.RESIZE, this.handleResize, this);
     window.removeEventListener("ui:equip", this.equipListener);
     window.removeEventListener("ui:unequip", this.unequipListener);
+    window.removeEventListener("ui:use-item", this.useItemListener);
     window.removeEventListener("ui:respawn", this.respawnListener);
     window.removeEventListener("ui:connection-mode", this.connectionModeListener);
     window.removeEventListener("pagehide", this.pageHideListener);

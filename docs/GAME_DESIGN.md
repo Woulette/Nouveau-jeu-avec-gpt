@@ -23,6 +23,7 @@ L'univers, les personnages, les noms, les graphismes et les mécaniques finales 
 - silhouettes, couleurs de danger et zones d'interaction suffisamment claires sur un petit écran ;
 - priorité à la fluidité et à la lisibilité plutôt qu'à une accumulation d'effets visuels.
 - composition de l'interface conçue uniquement pour le format paysage ; en portrait, le jeu demande de tourner l'appareil au lieu de déformer ou de réorganiser l'écran de jeu.
+- interface nocturne moderne à dominante ardoise, avec accents jade pour les actions, bleu pour le mana et or pour la monnaie ; les panneaux emploient une hiérarchie nette et des contrastes lisibles au lieu de l'ancien empilement de cartes de prototype.
 
 ## 2. Progression générale du joueur
 
@@ -202,14 +203,14 @@ Important : les bonus directs accordés par le rang ne doivent pas être inclus 
 
 ### Inventaire et équipement autoritaires de la première tranche
 
-L'inventaire et l'équipement partagent désormais **une seule fenêtre**, sans onglet interne séparant les deux vues :
+L'inventaire et l'équipement partagent désormais **une seule fenêtre**, sans onglet interne séparant les deux vues. Son organisation s'inspire de la lisibilité fonctionnelle des inventaires de MMORPG sans reprendre leurs graphismes :
 
 - à gauche, un mannequin du personnage entouré de six emplacements placés près de la partie du corps correspondante : **Coiffe, Armure, Pantalon, Bottes, Anneau et Arme/Corps-à-corps** ;
-- à droite, la grille du sac avec quatre filtres immédiatement accessibles : **Tout, Équipements, Ressources et Consommables** ;
-- toucher un objet sélectionne celui-ci et ouvre une fiche compacte indiquant au minimum son nom, son type, sa quantité, sa description, ses bonus ou effets, son rang requis et l'action disponible, par exemple Équiper, Retirer ou Utiliser ;
+- au centre, une vraie grille carrée de vingt emplacements minimum, la capacité utilisée, le portefeuille d'or et quatre filtres immédiatement accessibles : **Tout, Équipements, Consommables et Ressources** ;
+- à droite, une fiche d'objet persistante qui ne déforme pas la grille et indique au minimum son nom, son type, sa quantité, sa description, ses bonus ou effets, son rang requis et l'action disponible, par exemple Équiper, Retirer ou Utiliser ;
 - l'objet porté apparaît sur le slot correspondant autour du mannequin afin que le changement soit immédiatement visible.
 
-Le mannequin et la grille doivent tenir côte à côte dans l'écran paysage. Les emplacements vides restent visibles et identifiables. La fenêtre ne doit pas obliger le joueur à ouvrir une page d'équipement distincte.
+Les trois zones doivent tenir côte à côte dans la zone sûre de l'écran paysage. Les emplacements vides restent visibles et identifiables, et la grille initiale complète ne doit pas cacher sa dernière rangée. La fenêtre ne doit pas obliger le joueur à ouvrir une page d'équipement distincte.
 
 La première tenue de test remplit les six emplacements avec une coiffe, une dague, une tunique, un pantalon, des bottes d'aventurier et un anneau de cuivre. Les monstres peuvent ensuite donner des objets plus puissants, par exemple la Coiffe du Sanglier ou la Lame-croc de faille.
 
@@ -219,9 +220,10 @@ L'inventaire et l'équipement appartiennent au joueur autoritaire de la zone :
 - il vérifie le type d'objet, le slot et le rang minimal ;
 - remplacer un objet conserve l'ancien dans l'inventaire ;
 - les bonus portés modifient réellement les dégâts, la Défense, l'Énergie, les PV, les PM et l'indice de puissance ;
+- un consommable utilisable est validé par l'autorité du monde avant d'appliquer son effet et de diminuer sa quantité ; la petite potion de départ rend actuellement 35 PV sans pouvoir être gaspillée lorsque les PV sont déjà au maximum ;
 - les objets restent présents lors d'une reconnexion au même serveur de zone.
 
-Cette autorité est conservée par le serveur de zone pendant la session. Le prototype possède en plus une sauvegarde locale versionnée du personnage dans le navigateur : niveau, XP générale, maîtrises, PV, PM, position extérieure, inventaire et équipement. Elle permet de reprendre la progression sur le même appareil en mode local ou hors ligne. Un garde anti-régression empêche qu'un personnage en ligne recréé au niveau 1 après la perte d'un serveur en mémoire écrase silencieusement une sauvegarde locale plus avancée. Une sauvegarde MMO sécurisée, partagée entre appareils et résistante aux redéploiements nécessitera toujours un compte et une base de données serveur.
+Cette autorité est conservée par le serveur de zone pendant la session. Le prototype possède en plus une sauvegarde locale versionnée du personnage dans le navigateur : niveau, XP générale, maîtrises, PV, PM, position extérieure, inventaire, équipement et or. Les anciennes sauvegardes `v2` sans champ d'or restent compatibles et démarrent à zéro. Cette sauvegarde permet de reprendre la progression sur le même appareil en mode local ou hors ligne. Un garde anti-régression empêche qu'un personnage en ligne recréé au niveau 1 après la perte d'un serveur en mémoire écrase silencieusement une sauvegarde locale plus avancée. Une sauvegarde MMO sécurisée, partagée entre appareils et résistante aux redéploiements nécessitera toujours un compte et une base de données serveur.
 
 ### Accès aux failles
 
@@ -382,13 +384,14 @@ Les distances de détection, de poursuite, d'abandon et d'attaque devront être 
 - Le jeu se joue **uniquement en paysage** à compter de cette décision.
 - En portrait, un écran simple demande au joueur de tourner son téléphone ; les commandes de jeu et les panneaux ne doivent pas être utilisables tant que l'appareil n'est pas revenu en paysage.
 - Le passage portrait-paysage doit restaurer immédiatement un canvas à la taille exacte du nouvel écran, sans étirement ni conservation d'une mauvaise taille.
+- La caméra de jeu utilise 90 % du zoom paysage précédent afin de montrer davantage du monde sur téléphone comme sur ordinateur, sans réduire l'interface HTML.
 - L'interface doit utiliser le moins d'espace permanent possible.
 - Le menu compact propose des entrées distinctes. **Inventaire** ouvre la fenêtre combinée Inventaire + Équipement ; **Statistiques** ouvre uniquement les statistiques ; **Carte des failles** ouvre la carte et son journal.
 - Une fenêtre ne contient pas les onglets permettant de basculer vers l'autre : le joueur ferme la fenêtre actuelle puis choisit lui-même une autre entrée du menu.
 - Les panneaux secondaires doivent pouvoir se refermer rapidement et ne pas masquer inutilement le combat.
-- La fenêtre Inventaire + Équipement place le mannequin et ses six slots à gauche, puis la grille filtrable et la fiche de l'objet sélectionné à droite.
+- La fenêtre Inventaire + Équipement place le mannequin et ses six slots à gauche, la grille filtrable et le portefeuille au centre, puis la fiche de l'objet sélectionné à droite.
 - La fenêtre Statistiques est une vue séparée, compacte et fixe. Les six statistiques — Corps-à-corps, Distance, Magie, Défense, Énergie et Vitesse — doivent toutes tenir simultanément dans la hauteur disponible en paysage, **sans aucun défilement**.
-- Les statistiques entraînables montrent de façon concise leur total, le détail Base, Combat et Équipement ainsi que leur progression d'entraînement. La Vitesse montre sa valeur, sa prochaine augmentation liée au niveau et le plafond 300.
+- Chaque statistique occupe une ligne entière, les unes sous les autres, avec les colonnes **Base, Combat, Équipement et Total** dans cet ordre. Les statistiques entraînables montrent aussi leur progression d'entraînement ; la Vitesse montre sa valeur, sa prochaine augmentation liée au niveau et le plafond 300.
 - Un butin ramassé automatiquement affiche pendant quelques secondes son icône, son nom et sa quantité juste au-dessus de la barre de compétences.
 
 ### Monde et contenu initial
@@ -502,7 +505,7 @@ Les fondations sont suffisamment définies pour construire et tester. Les sujets
 ## 11. État du projet
 
 - Phase actuelle : première tranche jouable en cours d'implémentation.
-- État du 14 juillet 2026 : la refonte paysage Inventaire/Statistiques est active ; les Slimes ripostent ; le personnage reste non classé avant le futur éveil au QG ; la régénération hors combat, l'XP de maîtrise sans pénalité de niveau, la sauvegarde locale protégée et le mode hors ligne préchargé sont intégrés.
+- État du 14 juillet 2026 : l'interface a été reconstruite dans un thème ardoise-jade ; la caméra paysage est dézoomée à 90 %, l'inventaire en trois zones possède une grille fixe, ses quatre tris et un portefeuille persistant, et les six statistiques sont alignées verticalement sans défilement. Les Slimes ripostent ; le personnage reste non classé avant le futur éveil au QG ; la régénération hors combat, l'XP de maîtrise sans pénalité de niveau, la sauvegarde locale protégée et le mode hors ligne préchargé sont intégrés.
 - La première faille E est désormais une instance jouable de trois salles. Les portails apparaissent dynamiquement, expirent après 24 heures, libèrent leur boss dans le monde s'ils sont ignorés, apparaissent sur une carte avec journal et disparaissent définitivement lorsqu'ils sont fermés. Leur cycle et les Gardiens échappés survivent aux redémarrages locaux ; le monde en ligne attend encore sa base de données persistante.
 - Les fondations validées sont le déplacement tactile sur cases, le combat automatique à portée, les six statistiques dont la Vitesse, l'Aventurier sans rang avant son éveil, les rangs liés à la puissance et au niveau minimum après l'éveil, les trois voies permanentes, l'interface mobile compacte en paysage, les failles dynamiques et l'intégration MMO progressive avec solution hors ligne locale.
 - Les valeurs d'équilibrage provisoires peuvent être modifiées après les essais sans changer ces fondations.

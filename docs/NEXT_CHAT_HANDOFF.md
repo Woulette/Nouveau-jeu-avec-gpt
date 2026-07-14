@@ -24,9 +24,20 @@ Ne pas travailler sur un autre dépôt ou un autre jeu. Les projets VoidSector e
 
 ## Fonctionnalités désormais implémentées
 
+### Interface mobile et caméra
+
+- Nouveau thème nocturne ardoise-jade commun au HUD, aux panneaux, à la carte et aux écrans de résultat ; l'ancien CSS empilé de prototype a été remplacé par une feuille cohérente.
+- Caméra paysage réglée à 90 % du zoom précédent (`1,08` au lieu de `1,2` sur les formats testés), sans appliquer de zoom CSS à l'interface.
+- Inventaire entièrement reconstruit en trois zones fixes : équipement autour du mannequin, grille 5 × 4 minimum avec capacité/filtres/or, puis inspecteur d'objet persistant.
+- Filtres Tout, Équipement, Consommables et Ressources fonctionnels, avec compteur et libellés courts sur les écrans les plus étroits.
+- Portefeuille d'or ajouté au modèle autoritaire, aux snapshots et à la sauvegarde locale ; une ancienne sauvegarde `v2` sans ce champ migre automatiquement avec `0` or.
+- Les six statistiques sont maintenant six lignes verticales, chacune avec les colonnes Base, Combat, Équipement et Total. La page entière tient sans défilement en paysage.
+- La petite potion de départ est utilisable : le monde vérifie la possession et les PV, rend 35 PV, consomme une unité et refuse de la gaspiller à pleine vie.
+- Aucun asset graphique n'a été remplacé dans cette passe ; l'utilisateur prévoit de traiter les assets séparément.
+
 ### Sauvegarde et hors ligne
 
-- Sauvegarde navigateur versionnée `v2` : niveau, XP, maîtrises, PV/PM, position extérieure, inventaire et équipement.
+- Sauvegarde navigateur versionnée `v2` : niveau, XP, maîtrises, PV/PM, position extérieure, inventaire, équipement et or.
 - Sauvegarde régulière et lors de la fermeture de la page.
 - Protection anti-régression : un personnage serveur recréé au niveau 1 ne peut pas écraser une sauvegarde locale plus avancée.
 - Choix En ligne/Hors ligne dans le menu. Le mode hors ligne démarre un royaume local immédiatement.
@@ -56,9 +67,9 @@ Ne pas travailler sur un autre dépôt ou un autre jeu. Les projets VoidSector e
 
 ## État de validation de cette version
 
-- 72 tests automatisés réussis, dont le cycle local persistant sur 24 h, la restauration du Gardien extérieur, le blocage de fermeture et le parcours serveur des trois salles.
+- 74 tests automatisés réussis, dont la migration d'une sauvegarde sans or, la consommation autoritaire d'une potion, le cycle local persistant sur 24 h, la restauration du Gardien extérieur, le blocage de fermeture et le parcours serveur des trois salles.
 - TypeScript, ESLint et build Next.js de production réussis.
-- Test navigateur mobile en `844×390`, `780×360` et portrait : canvas exact, carte sans scroll, détail de faille, passage hors ligne, sauvegarde puis rechargement réussis, aucune erreur console.
+- Test navigateur mobile en `740×360`, `844×390`, `932×430` et portrait `390×844` : panneau contenu dans le viewport, vingt slots visibles sans rangée cachée, tris exacts, équipement/déséquipement, portefeuille, six lignes de statistiques sans scroll et aucune erreur applicative ou requête échouée.
 - Entrée réelle dans le portail vérifiée visuellement : le décor de faille, les deux monstres de la première salle et le premier sceau apparaissent correctement.
 
 ## Fichiers principaux

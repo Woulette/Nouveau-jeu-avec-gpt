@@ -14,6 +14,7 @@ function savedAdventurer(overrides: Partial<PersistedPlayerProfile> = {}): Persi
     mp: 130,
     level: 20,
     xp: 0,
+    gold: 0,
     rank: null,
     combatPath: "adventurer",
     className: "Aventurier",

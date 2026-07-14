@@ -42,6 +42,7 @@ export interface ItemDefinition {
   equipmentSlot?: EquipmentSlot;
   requiredRank?: PlayerRank;
   bonuses?: Readonly<ItemBonuses>;
+  healAmount?: number;
 }
 
 const itemCatalog = {
@@ -53,6 +54,7 @@ const itemCatalog = {
     kind: "consumable",
     category: "consumable",
     rarity: "common",
+    healAmount: 35,
   },
   "coiffe-aventurier": {
     id: "coiffe-aventurier",

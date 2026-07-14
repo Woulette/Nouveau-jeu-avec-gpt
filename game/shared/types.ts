@@ -66,6 +66,8 @@ export interface PlayerSnapshot {
   combatPath: CombatPath;
   className: string;
   power: number;
+  /** Persistent soft currency displayed in the inventory wallet. */
+  gold: number;
   /** Display stat. Movement timing will be connected to it in a later balance pass. */
   speed: number;
   masteries: PlayerMasteries;
@@ -158,6 +160,13 @@ export type GameEvent =
       playerId: EntityId;
       itemId: string;
       quantity: number;
+    }
+  | {
+      type: "item-used";
+      playerId: EntityId;
+      itemId: string;
+      quantity: number;
+      effectAmount: number;
     }
   | {
       type: "rift-room-cleared";
