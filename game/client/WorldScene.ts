@@ -9,6 +9,10 @@ import type {
   HudRiftCompletion,
   HudStatBreakdown,
 } from "@/components/Hud";
+import {
+  HEADQUARTERS_MASTER_ID,
+  HEADQUARTERS_MASTER_POSITION,
+} from "@/game/shared/awakening";
 import { positionKey } from "@/game/shared/grid";
 import {
   EQUIPMENT_SLOTS,
@@ -19,6 +23,7 @@ import {
   type ItemDefinition,
 } from "@/game/shared/items";
 import type {
+  AwakenedCombatPath,
   Direction,
   EquipmentSlot,
   EquipmentSnapshot,
@@ -31,8 +36,13 @@ import type {
   RealmSnapshot,
   RiftSnapshot,
 } from "@/game/shared/types";
-import { RIFT_MAP, RIFT_ROOM_GATES } from "@/game/shared/rifts";
-import { STARTER_LANDMARKS, STARTER_MAP } from "@/game/shared/world";
+import { RIFT_MAP, RIFT_ROOM_GATES, getRiftRankConfig } from "@/game/shared/rifts";
+import {
+  STARTER_LANDMARKS,
+  STARTER_MAP,
+  WORLD_FIELD_OBSTACLES,
+  WORLD_REGIONS,
+} from "@/game/shared/world";
 
 import { createProceduralAssets } from "./AssetFactory";
 import { WorldSocket } from "./WorldSocket";
@@ -115,10 +125,36 @@ function visualDirection(direction: Direction): CardinalDirection {
 
 function creatureKind(species: string, isBoss: boolean): CreatureKind {
   if (isBoss || species === "rift-guardian") return "boss";
-  if (species === "slime") return "slime";
-  if (species === "wolf") return "corrupted";
+  if (species.includes("slime") || species.includes("scarab")) return "slime";
+  if (species.includes("boar")) return "boar";
+  if (
+    species === "wolf" ||
+    species.includes("void") ||
+    species.includes("abyssal") ||
+    species.includes("eclipse")
+  ) return "corrupted";
   return "wolf";
 }
+
+function creatureTint(species: string, isBoss: boolean): number {
+  if (species.includes("amber")) return 0xf0b95f;
+  if (species.includes("ash")) return 0xa8c2bd;
+  if (species.includes("basalt") || species.includes("cliff")) return 0xc08b72;
+  if (species.includes("eclipse")) return 0xa091ff;
+  if (species.includes("void")) return 0x8f72db;
+  if (species.includes("abyssal")) return isBoss ? 0xde72ff : 0xb578ed;
+  if (species === "boar") return 0xbc916f;
+  return 0xffffff;
+}
+
+const RIFT_RANK_STYLE: Readonly<Record<string, { tint: number; text: string }>> = {
+  E: { tint: 0xa982e6, text: "#d7b8ff" },
+  D: { tint: 0x58c6a8, text: "#91ead2" },
+  C: { tint: 0x65aee8, text: "#9bd0ff" },
+  B: { tint: 0xe3a353, text: "#ffd18c" },
+  A: { tint: 0xe56477, text: "#ff9dac" },
+  S: { tint: 0xd85cff, text: "#eea0ff" },
+};
 
 const MONSTER_BEHAVIOUR_COPY: Readonly<
   Record<MonsterBehaviour, { label: string; color: string; hint: string }>
@@ -196,6 +232,21 @@ export class WorldScene extends Phaser.Scene {
     if (itemId) this.socket?.useItem(itemId);
   };
 
+  private readonly awakenListener = (event: Event) => {
+    const detail = (event as CustomEvent<{
+      npcId?: string;
+      combatPath?: AwakenedCombatPath;
+    }>).detail;
+    if (
+      detail?.npcId === HEADQUARTERS_MASTER_ID &&
+      (detail.combatPath === "melee" ||
+        detail.combatPath === "ranged" ||
+        detail.combatPath === "magic")
+    ) {
+      this.socket?.awaken(detail.npcId, detail.combatPath);
+    }
+  };
+
   private readonly respawnListener = () => {
     this.socket?.respawn();
   };
@@ -238,6 +289,7 @@ export class WorldScene extends Phaser.Scene {
     window.addEventListener("ui:equip", this.equipListener);
     window.addEventListener("ui:unequip", this.unequipListener);
     window.addEventListener("ui:use-item", this.useItemListener);
+    window.addEventListener("ui:awaken", this.awakenListener);
     window.addEventListener("ui:respawn", this.respawnListener);
     window.addEventListener("ui:connection-mode", this.connectionModeListener);
     window.addEventListener("pagehide", this.pageHideListener);
@@ -274,7 +326,10 @@ export class WorldScene extends Phaser.Scene {
         },
         onSnapshot: (snapshot) => this.applySnapshot(snapshot),
         onEvent: (event) => this.applyEvent(event),
-        onError: (message) => this.showToast(message, 0xf0a46d),
+        onError: (message) => {
+          this.showToast(message, 0xf0a46d);
+          this.callbacks.onHud({ awakeningError: message });
+        },
       },
     );
     this.socket.connect();
@@ -300,6 +355,27 @@ export class WorldScene extends Phaser.Scene {
       .setDepth(1)
       .setAlpha(0.8);
 
+    const regionTextures: Readonly<Record<string, string>> = {
+      E: VISUAL_KEYS.terrain.grassAlt,
+      D: VISUAL_KEYS.terrain.grassAlt,
+      C: VISUAL_KEYS.terrain.dirt,
+      B: VISUAL_KEYS.terrain.dirt,
+      A: VISUAL_KEYS.terrain.riftGround,
+      S: VISUAL_KEYS.terrain.riftGround,
+    };
+    for (const region of WORLD_REGIONS) {
+      this.paintArea(
+        region.position.x,
+        region.position.y,
+        region.width,
+        region.height,
+        regionTextures[region.rank],
+        1,
+        region.rank === "E" ? 0.44 : 0.7,
+        region.tint,
+      );
+    }
+
     this.add
       .tileSprite(31 * TILE, worldHeight / 2, 2 * TILE, worldHeight, VISUAL_KEYS.terrain.water)
       .setDepth(2);
@@ -307,14 +383,34 @@ export class WorldScene extends Phaser.Scene {
     this.paintRect(14, 16, 12, 15, VISUAL_KEYS.terrain.cobble, 3);
     this.paintRect(15, 1, 4, 46, VISUAL_KEYS.terrain.cobble, 3);
     this.paintRect(1, 24, 29, 4, VISUAL_KEYS.terrain.path, 3);
-    this.paintRect(30, 24, 28, 4, VISUAL_KEYS.terrain.path, 4);
-    this.paintRect(52, 5, 8, 12, VISUAL_KEYS.terrain.riftGround, 3);
+    this.paintArea(30, 24, 81, 4, VISUAL_KEYS.terrain.path, 4, 0.96);
+    this.paintArea(62, 11, 3, 52, VISUAL_KEYS.terrain.path, 4, 0.88);
+    this.paintArea(62, 11, 49, 3, VISUAL_KEYS.terrain.path, 4, 0.88);
+    this.paintArea(62, 37, 49, 3, VISUAL_KEYS.terrain.path, 4, 0.88);
+    this.paintArea(62, 60, 49, 3, VISUAL_KEYS.terrain.path, 4, 0.88);
     this.paintRect(54, 16, 3, 10, VISUAL_KEYS.terrain.dirt, 3);
+
+    for (const portal of STARTER_LANDMARKS.filter((landmark) => landmark.kind === "portal")) {
+      this.paintArea(
+        portal.position.x - 3,
+        portal.position.y - 3,
+        7,
+        7,
+        VISUAL_KEYS.terrain.riftGround,
+        3,
+        0.78,
+      );
+    }
 
     for (const patch of [
       { x: 35, y: 31, w: 5, h: 3 },
       { x: 44, y: 7, w: 4, h: 3 },
       { x: 56, y: 35, w: 5, h: 4 },
+      { x: 66, y: 15, w: 5, h: 4 },
+      { x: 88, y: 14, w: 6, h: 4 },
+      { x: 67, y: 40, w: 6, h: 4 },
+      { x: 99, y: 35, w: 6, h: 5 },
+      { x: 80, y: 57, w: 8, h: 5 },
     ]) {
       this.paintRect(patch.x, patch.y, patch.w, patch.h, VISUAL_KEYS.terrain.dirt, 2, 0.62);
     }
@@ -323,6 +419,16 @@ export class WorldScene extends Phaser.Scene {
     this.createBuildings();
     this.createProps();
     this.createNpc();
+
+    for (const region of WORLD_REGIONS) {
+      this.worldLabel(
+        (region.position.x + region.width / 2) * TILE,
+        (region.position.y + 3) * TILE,
+        `${region.name.toUpperCase()} · RANG ${region.rank}`,
+        4_000,
+        region.rank === "E" || region.rank === "D" ? "#f1d68b" : "#d6c5ff",
+      );
+    }
 
     this.add
       .text(32 * TILE + 18, 25.5 * TILE, "Prairies de l’Est  →", {
@@ -414,6 +520,30 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
+  private paintArea(
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    texture: string,
+    depth: number,
+    alpha = 1,
+    tint?: number,
+  ) {
+    const area = this.add
+      .tileSprite(
+        (x + width / 2) * TILE,
+        (y + height / 2) * TILE,
+        width * TILE,
+        height * TILE,
+        texture,
+      )
+      .setDepth(depth)
+      .setAlpha(alpha);
+    if (tint !== undefined) area.setTint(tint);
+    return area;
+  }
+
   private createBridge() {
     const graphics = this.add.graphics().setDepth(5);
     graphics.fillStyle(0x3d2d24, 1);
@@ -488,6 +618,11 @@ export class WorldScene extends Phaser.Scene {
       { x: 2, y: 34 }, { x: 8, y: 41 }, { x: 25, y: 39 }, { x: 34, y: 5 },
       { x: 36, y: 17 }, { x: 42, y: 12 }, { x: 44, y: 42 }, { x: 51, y: 45 },
       { x: 61, y: 5 }, { x: 61, y: 25 }, { x: 61, y: 43 }, { x: 34, y: 43 },
+      { x: 67, y: 5 }, { x: 69, y: 6 }, { x: 78, y: 17 }, { x: 81, y: 18 },
+      { x: 89, y: 6 }, { x: 91, y: 8 }, { x: 103, y: 18 }, { x: 106, y: 19 },
+      { x: 68, y: 31 }, { x: 70, y: 33 }, { x: 79, y: 43 }, { x: 82, y: 44 },
+      { x: 90, y: 31 }, { x: 93, y: 32 }, { x: 103, y: 43 }, { x: 105, y: 45 },
+      { x: 68, y: 57 }, { x: 71, y: 58 }, { x: 99, y: 59 }, { x: 102, y: 61 },
     ];
     for (const [index, position] of trees.entries()) {
       const point = tileCenter(position);
@@ -500,10 +635,27 @@ export class WorldScene extends Phaser.Scene {
     const rocks: GridPosition[] = [
       { x: 39, y: 7 }, { x: 41, y: 8 }, { x: 46, y: 16 }, { x: 57, y: 31 },
       { x: 38, y: 40 }, { x: 43, y: 28 }, { x: 49, y: 37 }, { x: 59, y: 18 },
+      { x: 74, y: 21 }, { x: 83, y: 8 }, { x: 92, y: 20 }, { x: 107, y: 10 },
+      { x: 66, y: 46 }, { x: 82, y: 29 }, { x: 89, y: 47 }, { x: 106, y: 34 },
+      { x: 78, y: 64 }, { x: 106, y: 66 },
     ];
     for (const position of rocks) {
       const point = tileCenter(position);
       this.add.image(point.x, point.y, VISUAL_KEYS.props.rock).setOrigin(0.5, 1).setDepth(point.y);
+    }
+
+    const decoratedObstacles = new Set(
+      [...trees, ...rocks].map((position) => positionKey(position)),
+    );
+    for (const position of WORLD_FIELD_OBSTACLES) {
+      if (decoratedObstacles.has(positionKey(position))) continue;
+      const point = tileCenter(position);
+      this.add
+        .image(point.x, point.y, VISUAL_KEYS.props.rock)
+        .setOrigin(0.5, 1)
+        .setScale(0.82)
+        .setTint(position.x >= 86 ? 0x8b7da0 : position.x >= 64 ? 0x9b7b66 : 0xffffff)
+        .setDepth(point.y);
     }
 
     for (const position of [
@@ -521,23 +673,23 @@ export class WorldScene extends Phaser.Scene {
 
     const sign = tileCenter({ x: 29, y: 23 });
     this.add.image(sign.x, sign.y, VISUAL_KEYS.props.sign).setOrigin(0.5, 1).setDepth(sign.y);
-  }
 
-  private createPortal() {
-    const portal = STARTER_LANDMARKS.find((landmark) => landmark.kind === "portal");
-    if (!portal) return;
-    const x = (portal.position.x + portal.width / 2) * TILE;
-    const y = (portal.position.y + portal.height) * TILE;
-    this.add
-      .sprite(x, y, portalTextureKey(0))
-      .setOrigin(0.5, 1)
-      .setDepth(y)
-      .play(VISUAL_ANIMATIONS.portal);
-    this.worldLabel(x, portal.position.y * TILE - 12, "Faille instable · Rang E", y + 2, "#d7a7ff");
+    for (const portal of STARTER_LANDMARKS.filter((landmark) => landmark.kind === "portal")) {
+      for (const offset of [
+        { x: -2, y: -1 }, { x: -1, y: -2 }, { x: 1, y: -2 },
+        { x: 2, y: -1 }, { x: -2, y: 1 }, { x: 2, y: 1 },
+      ]) {
+        const point = tileCenter({
+          x: portal.position.x + offset.x,
+          y: portal.position.y + offset.y,
+        });
+        this.add.image(point.x, point.y, VISUAL_KEYS.props.rock).setOrigin(0.5, 1).setDepth(point.y);
+      }
+    }
   }
 
   private createNpc() {
-    const point = tileCenter({ x: 15, y: 13 });
+    const point = tileCenter(HEADQUARTERS_MASTER_POSITION);
     const sprite = this.add
       .sprite(point.x, point.y, adventurerTextureKey("down", "idle", 0))
       .setOrigin(0.5, 1)
@@ -546,6 +698,23 @@ export class WorldScene extends Phaser.Scene {
       .play(VISUAL_ANIMATIONS.adventurer("down", "idle"));
     sprite.setScale(0.92);
     this.worldLabel(point.x, point.y - 68, "Maître du QG", point.y + 1, "#f3cf78");
+    this.add
+      .zone(point.x, point.y - 31, 62, 74)
+      .setDepth(point.y + 2)
+      .setInteractive({ useHandCursor: true })
+      .on(
+        Phaser.Input.Events.POINTER_UP,
+        (
+          _pointer: Phaser.Input.Pointer,
+          _x: number,
+          _y: number,
+          event: Phaser.Types.Input.EventData,
+        ) => {
+          event.stopPropagation();
+          this.socket?.interactNpc(HEADQUARTERS_MASTER_ID);
+          this.showToast("Le Maître du QG vous attend · approche en cours…", 0xf3cf78);
+        },
+      );
   }
 
   private worldLabel(x: number, y: number, text: string, depth: number, color = "#eadfbf") {
@@ -623,14 +792,16 @@ export class WorldScene extends Phaser.Scene {
     const { width, height } = this.scale.gameSize;
     const portrait = height > width;
     const baseZoom = portrait ? 1.02 : width < 700 ? 1.08 : 1.2;
-    this.cameras.main.setZoom(baseZoom * 0.9);
+    this.cameras.main.setZoom(baseZoom * 0.85);
   }
 
   private positionScreenText() {
     const { width, height } = this.scale.gameSize;
     this.zoneTitle?.setPosition(width / 2, 10);
     this.introText?.setPosition(width / 2, 43);
-    this.toast?.setPosition(width / 2, Math.max(76, height - 92));
+    this.toast
+      ?.setWordWrapWidth(Math.max(180, Math.min(460, width - 24)))
+      .setPosition(width / 2, Math.min(82, Math.max(70, height * 0.18)));
   }
 
   private configureInput() {
@@ -707,6 +878,7 @@ export class WorldScene extends Phaser.Scene {
       const rifts: HudRift[] = snapshot.rifts.map((rift) => ({
         id: rift.id,
         rank: rift.rank,
+        recommendedPower: getRiftRankConfig(rift.rank).recommendedPower,
         x: rift.position.x,
         y: rift.position.y,
         spawnedAt: rift.spawnedAt,
@@ -727,7 +899,9 @@ export class WorldScene extends Phaser.Scene {
     this.map = snapshot.map;
     if (!changed) {
       if (snapshot.riftRun) {
-        this.zoneTitle?.setText(`FAILLE E · SALLE ${snapshot.riftRun.room}/3`);
+        this.zoneTitle?.setText(
+          `FAILLE ${snapshot.riftRun.rank} · SALLE ${snapshot.riftRun.room}/3`,
+        );
         this.introText?.setText(
           snapshot.riftRun.roomCleared
             ? "Salle nettoyée · avancez vers la salle suivante"
@@ -758,7 +932,9 @@ export class WorldScene extends Phaser.Scene {
       this.zoneTitle?.setText("VAL D’AUBE");
       this.introText?.setText("Zone ouverte · surveillez les nouvelles failles sur la carte");
     } else if (snapshot.riftRun) {
-      this.zoneTitle?.setText(`FAILLE E · SALLE ${snapshot.riftRun.room}/3`);
+      this.zoneTitle?.setText(
+        `FAILLE ${snapshot.riftRun.rank} · SALLE ${snapshot.riftRun.room}/3`,
+      );
       this.introText?.setText("Éliminez tous les monstres pour briser le sceau");
       this.showToast("Vous franchissez la faille dimensionnelle", 0xc59aff);
     }
@@ -781,17 +957,18 @@ export class WorldScene extends Phaser.Scene {
       }
       const point = tileCenter(rift.position);
       const escaped = rift.status === "boss-escaped";
+      const style = RIFT_RANK_STYLE[rift.rank] ?? RIFT_RANK_STYLE.E;
       view.container.setPosition(point.x, point.y).setDepth(point.y).setVisible(true);
-      view.sprite.setTint(escaped ? 0xff6f77 : 0xffffff);
+      view.sprite.setTint(escaped ? 0xff6f77 : style.tint);
       view.label
         .setText(
           escaped
             ? rift.outsideBossAlive
-              ? "Faille E · GARDIEN ÉCHAPPÉ"
-              : "Faille E · brèche exposée"
-            : "Faille dimensionnelle · Rang E",
+              ? `Faille ${rift.rank} · GARDIEN ÉCHAPPÉ`
+              : `Faille ${rift.rank} · brèche exposée`
+            : `Faille dimensionnelle · Rang ${rift.rank}`,
         )
-        .setColor(escaped ? "#ff9a9f" : "#d7a7ff");
+        .setColor(escaped ? "#ff9a9f" : style.text);
     }
     for (const [id, view] of this.riftViews) {
       if (!activeIds.has(id)) {
@@ -807,10 +984,10 @@ export class WorldScene extends Phaser.Scene {
       .setOrigin(0.5, 1)
       .play(VISUAL_ANIMATIONS.portal);
     const label = this.add
-      .text(0, -92, "Faille dimensionnelle · Rang E", {
+      .text(0, -92, `Faille dimensionnelle · Rang ${rift.rank}`, {
         fontFamily: "Georgia, serif",
         fontSize: "10px",
-        color: "#d7a7ff",
+        color: (RIFT_RANK_STYLE[rift.rank] ?? RIFT_RANK_STYLE.E).text,
         backgroundColor: "#10151bdd",
         padding: { x: 5, y: 2 },
         align: "center",
@@ -946,7 +1123,8 @@ export class WorldScene extends Phaser.Scene {
       .setVisible(false);
     const sprite = this.add
       .sprite(0, 0, creatureTextureKey(kind, 0))
-      .setOrigin(0.5, 1);
+      .setOrigin(0.5, 1)
+      .setTint(creatureTint(monster.species, monster.isBoss));
     const targetZone = this.add
       .zone(
         0,
@@ -1077,6 +1255,25 @@ export class WorldScene extends Phaser.Scene {
         `${definition?.name ?? "Objet"} utilisé · +${event.effectAmount} PV`,
         0x65ddbd,
       );
+      return;
+    }
+    if (event.type === "awakening-dialogue" && event.playerId === this.localPlayerId) {
+      this.callbacks.onHud({
+        awakeningDialogue: {
+          npcId: event.npcId,
+          status: event.status,
+          requiredLevel: event.requiredLevel,
+          currentLevel: event.currentLevel,
+          className: event.className,
+          rank: event.rank,
+        },
+        awakeningError: null,
+      });
+      return;
+    }
+    if (event.type === "awakening-complete" && event.playerId === this.localPlayerId) {
+      this.callbacks.onHud({ awakeningDialogue: null, awakeningError: null });
+      this.showToast(`${event.className} éveillé · Rang ${event.rank}`, 0x65ddbd);
       return;
     }
     if (event.type === "respawn" && event.entityId === this.localPlayerId) {
@@ -1274,7 +1471,6 @@ export class WorldScene extends Phaser.Scene {
       this.rewards = this.rewards.filter((entry) => entry.id !== reward.id);
       this.callbacks.onHud({ rewards: [...this.rewards] });
     });
-    this.showToast(`${definition.name} ×${quantity} obtenu`, 0xcfa2ff);
   }
 
   private inventoryItem(
@@ -1366,6 +1562,7 @@ export class WorldScene extends Phaser.Scene {
     window.removeEventListener("ui:equip", this.equipListener);
     window.removeEventListener("ui:unequip", this.unequipListener);
     window.removeEventListener("ui:use-item", this.useItemListener);
+    window.removeEventListener("ui:awaken", this.awakenListener);
     window.removeEventListener("ui:respawn", this.respawnListener);
     window.removeEventListener("ui:connection-mode", this.connectionModeListener);
     window.removeEventListener("pagehide", this.pageHideListener);

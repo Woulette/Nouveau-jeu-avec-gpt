@@ -8,87 +8,105 @@ Dernière mise à jour : 14 juillet 2026.
 - Branche de travail et de déploiement : `main`
 - Jeu public : <https://nouveau-jeu-avec-gpt.vercel.app>
 - Stack : Next.js 16, React 19, Phaser 3, TypeScript, Vitest et WebSocket avec moteur local de secours.
-- Document de référence complet : `docs/GAME_DESIGN.md`.
+- Document de référence : `docs/GAME_DESIGN.md`.
 
-Ne pas travailler sur un autre dépôt ou un autre jeu. Les projets VoidSector et Chroniques de Solenne ne font pas partie de cette demande.
+Ne jamais modifier VoidSector ni un autre jeu. Ce dépôt et cette URL sont les seules cibles.
 
-## Décisions de conception impératives
+## Décisions impératives
 
-- Jeu mobile en paysage uniquement ; le portrait affiche une invitation à tourner le téléphone.
-- Déplacement tactile par cases et combat en temps réel : toucher un monstre fait avancer automatiquement le joueur jusqu'à sa portée puis attaquer.
-- Le joueur commence Aventurier niveau 1, **sans rang** et sans compétence. Le futur éveil au QG au niveau 10 permettra de choisir définitivement Épéiste, Archer ou Magicien et donnera le rang E.
-- Six statistiques : Corps-à-corps, Distance, Magie, Défense, Énergie et Vitesse. Les quatre maîtrises de combat ont une XP indépendante du niveau général.
-- Toute attaque qui inflige ou reçoit réellement des dégâts donne de l'XP de maîtrise, même contre un monstre de niveau très inférieur.
-- Hors combat : +2 PV par seconde complète. Une attaque donnée ou reçue remet le délai à zéro ; après un dernier impact à `t=0`, le premier +2 arrive à `t=6 s`.
-- Inventaire et équipement restent dans une fenêtre combinée ; les Statistiques et la Carte des failles sont deux fenêtres séparées, toutes sans défilement structurel en paysage.
+- Jeu mobile uniquement en paysage ; le portrait demande de tourner le téléphone.
+- Le joueur commence Aventurier niveau 1 sans rang ni compétence.
+- Au niveau 10, le Maître du QG permet un choix définitif : Épéiste, Archer ou Magicien. Le choix donne le rang E, remet les maîtrises offensives provisoires à zéro, attribue 25 points à la voie choisie et conserve Défense.
+- Le soin hors combat commence exactement 2 secondes après le dernier coup donné ou reçu. Il rend +1 PV toutes les 500 ms : affichage de 1 en 1, total 2 PV/s.
+- La caméra utilise 85 % du zoom paysage de référence.
+- Les fonds du HUD touchent les bords physiques. Le contenu respecte les safe areas iPhone ; ne jamais supprimer cette protection.
+- Inventaire + équipement restent dans une seule fenêtre ; Statistiques et Carte des failles sont séparées.
+- Les six statistiques tiennent sur une page sans scroll, en lignes verticales Base / Combat / Équipement / Total.
+- Les assets définitifs sont traités séparément. Les variantes procédurales actuelles servent à rendre le nouveau contenu testable.
 
-## Fonctionnalités désormais implémentées
+## Fonctionnalités implémentées dans la dernière passe
 
-### Interface mobile et caméra
+### Soin hors combat
 
-- Nouveau thème nocturne ardoise-jade commun au HUD, aux panneaux, à la carte et aux écrans de résultat ; l'ancien CSS empilé de prototype a été remplacé par une feuille cohérente.
-- Caméra paysage réglée à 90 % du zoom précédent (`1,08` au lieu de `1,2` sur les formats testés), sans appliquer de zoom CSS à l'interface.
-- Inventaire entièrement reconstruit en trois zones fixes : équipement autour du mannequin, grille 5 × 4 minimum avec capacité/filtres/or, puis inspecteur d'objet persistant.
-- Filtres Tout, Équipement, Consommables et Ressources fonctionnels, avec compteur et libellés courts sur les écrans les plus étroits.
-- Portefeuille d'or ajouté au modèle autoritaire, aux snapshots et à la sauvegarde locale ; une ancienne sauvegarde `v2` sans ce champ migre automatiquement avec `0` or.
-- Les six statistiques sont maintenant six lignes verticales, chacune avec les colonnes Base, Combat, Équipement et Total. La page entière tient sans défilement en paysage.
-- La petite potion de départ est utilisable : le monde vérifie la possession et les PV, rend 35 PV, consomme une unité et refuse de la gaspiller à pleine vie.
-- Aucun asset graphique n'a été remplacé dans cette passe ; l'utilisateur prévoit de traiter les assets séparément.
+- `PLAYER_COMBAT_TIMEOUT_MS = 2_000`.
+- Premier tick +1 à `dernierImpact + 2 000 ms`, puis +1 chaque 500 ms.
+- Un coup sortant comme un coup entrant redémarre le même délai.
+- Les ticks retardés ne sont jamais agrégés en un gros saut visible : un seul `+1` est appliqué, puis le rythme de 500 ms reprend ; un mort ne se soigne pas.
 
-### Sauvegarde et hors ligne
+### Éveil du Maître du QG
 
-- Sauvegarde navigateur versionnée `v2` : niveau, XP, maîtrises, PV/PM, position extérieure, inventaire, équipement et or.
-- Sauvegarde régulière et lors de la fermeture de la page.
-- Protection anti-régression : un personnage serveur recréé au niveau 1 ne peut pas écraser une sauvegarde locale plus avancée.
-- Choix En ligne/Hors ligne dans le menu. Le mode hors ligne démarre un royaume local immédiatement.
-- Cache hors ligne : une première visite en production précharge le graphe complet des fichiers du jeu et attend l'accusé « prêt » ; les réouvertures suivantes peuvent alors fonctionner sans réseau.
-- Sécurité actuelle : la sauvegarde navigateur n'est restaurée que par le royaume local explicitement autorisé. Elle n'est jamais acceptée comme autorité par le serveur MMO en ligne.
-- Limite connue : une instance de faille interrompue reprend depuis la dernière sauvegarde extérieure sûre. La synchronisation entre appareils attend les comptes et une base de données.
+- Le Maître situé en `{15,13}` possède une vraie zone tactile.
+- Toucher le PNJ fait approcher automatiquement le joueur, puis le serveur ouvre un dialogue `level-required`, `eligible` ou `completed`.
+- Dialogue moderne avec trois cartes, explication des voies et confirmation explicite de l’irréversibilité.
+- Validation autoritaire : niveau 10 minimum, personnage vivant, zone extérieure, distance correcte, voie encore vierge.
+- Choix Épéiste / Archer / Magicien, rang E, 25 points sur la bonne maîtrise, Défense conservée.
+- Le rang, la classe et la voie sont sauvegardés. L’anti-régression empêche de perdre l’éveil, de baisser de rang ou de changer de voie après rechargement.
 
-### Failles dynamiques
+### Monde ouvert agrandi
 
-- Une faille E de test apparaît immédiatement. D'autres peuvent apparaître toutes les 15 à 45 minutes, avec trois actives au maximum.
-- Chaque faille a une échéance réelle de 24 heures.
-- Après l'échéance, un Gardien agressif sort dans le monde. Il faut tuer ce boss extérieur puis terminer l'intérieur.
-- Si l'échéance arrive pendant une instance, le joueur est éjecté. La fermeture reste bloquée tant que le Gardien extérieur vit, y compris si l'intérieur avait déjà été engagé.
-- Une faille fermée disparaît définitivement, sans cooldown d'une heure.
-- En local/hors ligne, dates d'apparition et d'expiration, prochaine apparition, portails et Gardien extérieur avec ses PV/sa position sont sauvegardés dans un format versionné : un reload ne remet pas le délai à zéro.
-- En ligne, le cycle reste pour l'instant en mémoire et sera rendu durable avec la future base de données MMO.
-- Le menu Carte affiche le joueur, les marqueurs de failles et un Journal. Un marqueur donne rang, âge, temps restant, position et état.
+- Carte passée de 64 × 48 à **112 × 72** cases, toutes les destinations importantes restant reliées à la ville.
+- Six régions : Prairies éveillées E, Bois d’Ambre D, Marais de Cendre C, Plateaux Brisés B, Lande de l’Éclipse A, Frontière Abyssale S.
+- Quinze monstres extérieurs et au moins dix espèces/variantes. Les nouvelles créatures possèdent des PV, dégâts, Défense, détection, XP et butins croissants.
+- Nouvelles ressources : Résine d’Ambre, Cendre de mana, Cœur de basalte, Éclat d’éclipse et Fragment abyssal.
+- Rendu différencié par biome et teintes de créatures provisoires, avec routes, repères et pierres autour de chaque portail.
 
-### Donjon E
+### Failles E à S
 
-- Toucher le portail fait marcher le joueur jusqu'à l'entrée puis charge une instance individuelle.
-- Trois salles physiques : deux vagues puis le Gardien de la Brèche.
-- Impossible de franchir un sceau tant que la salle actuelle contient un monstre vivant.
-- Le boss final ferme la faille et ramène le joueur dans le monde ouvert.
-- Fenêtre finale : « Portail rang E terminé », XP totale, équipement/ressources, durée.
-- Récompense garantie de test : 3 Poussières dimensionnelles + 1 Lame-croc de faille, en plus du butin aléatoire.
+- Noyau générique `RIFT_RANKS` et `RIFT_RANK_CONFIG` pour E, D, C, B, A et S.
+- Six portails stables : E `{54,8}`, D `{72,12}`, C `{96,12}`, B `{73,38}`, A `{96,40}`, S `{88,61}`.
+- Un monde neuf expose les six rangs ; maximum six failles actives. Une apparition future recrée en priorité un rang absent.
+- Même logique trois salles pour chaque rang, mais noms, niveaux, PV, dégâts, Défense, vitesse, XP, butin et récompense finale sont mis à l’échelle.
+- Le détail de chaque portail affiche la puissance conseillée, la puissance actuelle et un avertissement `Danger` ou `Prêt` ; le journal fait défiler toutes les failles, y compris les huit entrées possibles pendant une migration.
+- Le rang exact traverse snapshots, instance, événements, affichage, boss échappé et sauvegarde locale.
+- Persistance des failles `v2` multirang avec migration transparente du format `v1` E : aucune date, position, PV de boss ni prochaine apparition ne doit être remise à zéro.
+- Une ancienne sauvegarde possédant plusieurs failles E les conserve toutes et reçoit quand même D à S. Elle peut donc afficher temporairement jusqu’à huit portails, puis revient à la limite normale de six à mesure que les doublons E historiques sont résolus.
 
-## État de validation de cette version
+### HUD mobile iPhone/Android
 
-- 74 tests automatisés réussis, dont la migration d'une sauvegarde sans or, la consommation autoritaire d'une potion, le cycle local persistant sur 24 h, la restauration du Gardien extérieur, le blocage de fermeture et le parcours serveur des trois salles.
-- TypeScript, ESLint et build Next.js de production réussis.
-- Test navigateur mobile en `740×360`, `844×390`, `932×430` et portrait `390×844` : panneau contenu dans le viewport, vingt slots visibles sans rangée cachée, tris exacts, équipement/déséquipement, portefeuille, six lignes de statistiques sans scroll et aucune erreur applicative ou requête échouée.
-- Entrée réelle dans le portail vérifiée visuellement : le décor de faille, les deux monstres de la première salle et le premier sceau apparaissent correctement.
+- Zoom final 85 %.
+- Carte joueur compacte collée au coin haut-gauche ; identité courte `Niv. · Classe · Rang`.
+- Puissance au bord haut-droit, hotbar au bord bas, Menu au coin bas-droit.
+- Les surfaces vont jusqu’au verre ; le texte et les zones tactiles utilisent `env(safe-area-inset-*)`.
+- XP déplacée en haut-centre. Butin déplacé en haut et doublon toast supprimé.
+- Les jauges de progression des statistiques font 7 px et restent visibles sans scroll.
+- QA finale réussie sur iPhone 874×402 avec safe areas 62/62/17, Android 740×360 et ordinateur 1280×720 : surfaces aux quatre bords, dialogue entièrement lisible, zones tactiles de 44 px minimum et aucune erreur navigateur.
+
+## Sauvegarde et architecture à connaître
+
+- Sauvegarde joueur navigateur `v2` : niveau, XP, maîtrises, PV/PM, position extérieure, inventaire, équipement, or, rang, voie et classe.
+- Sauvegarde du cycle de failles distincte, désormais `v2` multirang.
+- Le royaume local accepte la sauvegarde navigateur ; le serveur MMO en ligne ne la prend pas comme autorité.
+- Une instance interrompue reprend depuis le dernier état extérieur sûr. Le portail extérieur et son délai continuent.
+- Le monde en ligne reste en mémoire dans cette tranche ; comptes, base durable et synchronisation multi-appareils restent à construire.
 
 ## Fichiers principaux
 
-- `game/server/realm.ts` : autorité de monde, combat, régénération, sauvegarde locale autorisée et cycle complet des failles.
-- `game/server/rift-content.ts` : monstres des trois salles et Gardien extérieur.
-- `game/shared/rifts.ts` : temps 24 h, carte intérieure, état et récompenses des instances.
-- `game/shared/rift-persistence.ts` et `game/client/rift-storage.ts` : cycle versionné des portails et Gardien extérieur durable en local/hors ligne.
-- `game/shared/save.ts` et `game/client/storage.ts` : format de sauvegarde et stockage navigateur.
-- `game/client/WorldSocket.ts` : modes en ligne/local/hors ligne et heartbeat.
-- `game/client/WorldScene.ts` : rendu du monde, portails, intérieur de faille et événements.
-- `components/Hud.tsx` et `components/Hud.module.css` : inventaire, statistiques, carte/journal et bilan de portail.
-- `public/sw.js` : cache hors ligne de l'application.
+- `game/server/realm.ts` : autorité monde/combat/soin/éveil/failles.
+- `game/shared/awakening.ts` et `game/server/awakening-realm.test.ts` : contrat du Maître du QG.
+- `game/shared/world.ts` : carte 112 × 72, régions, portails et monstres extérieurs.
+- `game/shared/rifts.ts` et `game/server/rift-content.ts` : config E à S et contenu des salles.
+- `game/shared/rift-persistence.ts` : format `v2` et migration `v1`.
+- `game/shared/save.ts` : sauvegarde joueur et protection de l’éveil.
+- `game/client/WorldScene.ts` : rendu, interactions PNJ/portails, notifications et zoom.
+- `components/AwakeningDialog.tsx` : choix de spécialité.
+- `components/Hud.tsx` et `components/Hud.module.css` : HUD, inventaire, stats et carte.
+- `components/GameShell.tsx` : état React et dialogue d’éveil.
 
-## Prochaines priorités logiques
+## Validation à préserver
 
-1. Tester l'équilibrage de la faille E avec un vrai Aventurier autour du niveau 10 et ajuster PV/dégâts/butin selon le ressenti mobile.
-2. Implémenter le PNJ du QG, le choix irréversible au niveau 10, le rang E et les premières compétences des trois voies.
-3. Ajouter comptes et base de données pour une sauvegarde MMO sécurisée et multi-appareils.
-4. Transformer les instances individuelles en instances de groupe lorsque les groupes MMO seront conçus.
+- Dernière validation complète : TypeScript, ESLint, build de production et **110 tests sur 110** réussis.
+- Parcours navigateur final validé : clic Maître du QG niveau 10, sélection Archer, rang E et 25 points Distance persistants, puis affichage simultané des six marqueurs E à S.
+- Exécuter avant publication : `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`.
+- Refaire le parcours navigateur sur au moins 874×402 iPhone simulé, 740×360 Android et 1280×720 desktop.
+- Vérifier réellement : affichage six portails, clic Maître du QG niveau 10, choix de classe, rang E persistant, inventaire, Statistiques sans scroll et absence d’erreurs console.
+- Après push de `main`, attendre et vérifier le contenu réellement servi par Vercel.
 
-Toute nouvelle décision validée avec l'utilisateur doit être ajoutée à `docs/GAME_DESIGN.md` avant la fin du travail, puis la version doit être enregistrée sur GitHub et vérifiée sur Vercel.
+## Prochaines priorités
+
+1. Concevoir les quatre premières compétences actives des trois voies, mana et temps de recharge.
+2. Tester puis rééquilibrer les nouveaux monstres et les multiplicateurs de failles D à S.
+3. Ajouter les promotions D et supérieures avec seuils de niveau et de puissance.
+4. Ajouter comptes et base de données pour une vraie persistance MMO multi-appareils.
+5. Remplacer progressivement les variantes procédurales par les assets définitifs validés par l’utilisateur.
+
+Toute décision validée doit être ajoutée à `docs/GAME_DESIGN.md`, puis le code et ce relais doivent être poussés sur GitHub et vérifiés sur Vercel.

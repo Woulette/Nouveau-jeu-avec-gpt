@@ -5,6 +5,7 @@ import { STARTER_MAP, STARTER_MONSTERS } from "../shared/world";
 import {
   InMemoryRealm,
   PLAYER_COMBAT_TIMEOUT_MS,
+  PLAYER_HEALTH_REGEN_INTERVAL_MS,
   PLAYER_HEALTH_REGEN_PER_SECOND,
 } from "./realm";
 
@@ -161,7 +162,7 @@ describe("authoritative in-memory realm", () => {
     }
   });
 
-  it("regenerates two HP per complete second after five seconds without combat", () => {
+  it("starts after two seconds and shows +1 ticks totalling two HP per second", () => {
     let now = 0;
     const realm = new InMemoryRealm({ now: () => now, random: () => 1, autoStart: false });
     realm.registerPeer("peer-1", () => undefined);
@@ -182,13 +183,17 @@ describe("authoritative in-memory realm", () => {
     slime.provokedById = null;
     slime.nextWanderAt = Number.MAX_SAFE_INTEGER;
 
-    now = 100 + PLAYER_COMBAT_TIMEOUT_MS;
+    now = 100 + PLAYER_COMBAT_TIMEOUT_MS - 1;
     realm.step(now);
     expect(realm.snapshot().players[0].hp).toBe(hpAfterCombat);
 
-    now += 999;
+    now += 1;
     realm.step(now);
-    expect(realm.snapshot().players[0].hp).toBe(hpAfterCombat);
+    expect(realm.snapshot().players[0].hp).toBe(hpAfterCombat + 1);
+
+    now += PLAYER_HEALTH_REGEN_INTERVAL_MS - 1;
+    realm.step(now);
+    expect(realm.snapshot().players[0].hp).toBe(hpAfterCombat + 1);
 
     now += 1;
     realm.step(now);
@@ -196,15 +201,17 @@ describe("authoritative in-memory realm", () => {
       hpAfterCombat + PLAYER_HEALTH_REGEN_PER_SECOND,
     );
 
-    // A delayed tick resolves the three additional full seconds exactly once.
+    // A suspended tab never turns missed ticks into one large visible jump.
     now += 3_000;
     realm.step(now);
     expect(realm.snapshot().players[0].hp).toBe(
-      hpAfterCombat + PLAYER_HEALTH_REGEN_PER_SECOND * 4,
+      hpAfterCombat + PLAYER_HEALTH_REGEN_PER_SECOND + 1,
     );
 
-    now += 100_000;
-    realm.step(now);
+    for (let tick = 0; tick < 100; tick += 1) {
+      now += PLAYER_HEALTH_REGEN_INTERVAL_MS;
+      realm.step(now);
+    }
     const healed = realm.snapshot().players[0];
     expect(healed.hp).toBe(healed.maxHp);
   });
@@ -244,12 +251,15 @@ describe("authoritative in-memory realm", () => {
     expect(realm.snapshot().players[0].masteries.melee.xp).toBe(5);
 
     // The one-shot slime never retaliates, so this also proves that giving an
-    // attack by itself restarts the same five-second combat window.
+    // attack by itself restarts the same two-second combat window.
     const hpAfterPlayerAttack = realm.snapshot().players[0].hp;
-    now += PLAYER_COMBAT_TIMEOUT_MS;
+    now += PLAYER_COMBAT_TIMEOUT_MS - 1;
     realm.step(now);
     expect(realm.snapshot().players[0].hp).toBe(hpAfterPlayerAttack);
-    now += 1_000;
+    now += 1;
+    realm.step(now);
+    expect(realm.snapshot().players[0].hp).toBe(hpAfterPlayerAttack + 1);
+    now += PLAYER_HEALTH_REGEN_INTERVAL_MS;
     realm.step(now);
     expect(realm.snapshot().players[0].hp).toBe(
       hpAfterPlayerAttack + PLAYER_HEALTH_REGEN_PER_SECOND,

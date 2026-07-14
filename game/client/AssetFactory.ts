@@ -509,6 +509,32 @@ function drawWolf(graphics: Graphics, frame: number, corrupted: boolean) {
   }
 }
 
+function drawBoar(graphics: Graphics, frame: number) {
+  const step = frame % 2 === 0 ? 0 : 2;
+  block(graphics, C.ink, 7, 40, 50, 4, 0.38);
+  block(graphics, C.ink, 8, 19, 42, 19);
+  block(graphics, 0x4a342d, 10, 18, 38, 19);
+  block(graphics, 0x725041, 14, 16, 29, 17);
+  block(graphics, 0x9a7258, 18, 17, 19, 5);
+  block(graphics, C.ink, 40, 15, 17, 20);
+  block(graphics, 0x4a342d, 42, 16, 14, 18);
+  block(graphics, 0x725041, 45, 18, 10, 13);
+  block(graphics, C.ink, 52, 25, 10, 8);
+  block(graphics, 0xb78a68, 53, 26, 8, 6);
+  block(graphics, C.ink, 57, 28, 2, 2);
+  block(graphics, C.ink, 47, 19, 2, 2);
+  block(graphics, 0xf2dfb1, 51, 32, 3, 7);
+  block(graphics, 0xf2dfb1, 57, 31, 3, 7);
+  block(graphics, C.ink, 42, 9, 7, 10);
+  block(graphics, 0x725041, 43, 11, 5, 7);
+  block(graphics, C.ink, 13 + step, 32, 8, 10);
+  block(graphics, 0x4a342d, 15 + step, 33, 5, 8);
+  block(graphics, C.ink, 35 - step, 32, 8, 10);
+  block(graphics, 0x4a342d, 37 - step, 33, 5, 8);
+  block(graphics, C.ink, 8, 21, 5, 4);
+  block(graphics, 0x725041, 5, 19, 6, 3);
+}
+
 function drawBoss(graphics: Graphics, frame: number) {
   const pulse = frame === 1 ? 2 : frame === 2 ? -1 : 0;
   block(graphics, C.ink, 15, 78, 67, 8, 0.42);
@@ -552,6 +578,7 @@ function createCreatures(scene: Phaser.Scene) {
       const size = kind === "slime" ? [32, 32] : kind === "boss" ? [96, 96] : [64, 48];
       texture(scene, creatureTextureKey(kind, frame), size[0], size[1], (graphics) => {
         if (kind === "slime") drawSlime(graphics, frame);
+        else if (kind === "boar") drawBoar(graphics, frame);
         else if (kind === "boss") drawBoss(graphics, frame);
         else drawWolf(graphics, frame, kind === "corrupted");
       });

@@ -31,6 +31,7 @@ export interface HudMapSize {
 export interface HudRift {
   id: string;
   rank: string;
+  recommendedPower: number;
   x: number;
   y: number;
   spawnedAt: number;
@@ -689,10 +690,12 @@ function RiftMapPanel({
   rifts,
   playerPosition,
   mapSize,
+  power,
 }: {
   rifts: HudRift[];
   playerPosition: HudMapPosition;
   mapSize: HudMapSize;
+  power: number;
 }) {
   const [selectedRiftId, setSelectedRiftId] = useState<string | null>(null);
   const [journalOpen, setJournalOpen] = useState(false);
@@ -712,8 +715,7 @@ function RiftMapPanel({
     if (left.status !== right.status) return left.status === "open" ? -1 : 1;
     return left.expiresAt - right.expiresAt;
   });
-  const journalRifts = orderedRifts.slice(0, 5);
-  const hiddenRiftCount = Math.max(0, orderedRifts.length - journalRifts.length);
+  const journalRifts = orderedRifts;
   const safeMapWidth = Math.max(1, mapSize.width);
   const safeMapHeight = Math.max(1, mapSize.height);
   const openCount = rifts.filter((rift) => rift.status === "open").length;
@@ -813,7 +815,6 @@ function RiftMapPanel({
               </button>
             ))}
             {!journalRifts.length ? <p>Aucune entrée dans le journal.</p> : null}
-            {hiddenRiftCount ? <small className={styles.hiddenRifts}>+{hiddenRiftCount} autre{hiddenRiftCount > 1 ? "s" : ""}</small> : null}
           </div>
         ) : selectedRift ? (
           <article className={styles.riftDetails}>
@@ -840,6 +841,13 @@ function RiftMapPanel({
               }</dd></div>
               <div><dt>Apparue il y a</dt><dd>{now === null ? "--" : formatRiftDuration(now - selectedRift.spawnedAt)}</dd></div>
               <div><dt>Temps restant</dt><dd>{riftTiming(selectedRift)}</dd></div>
+              <div>
+                <dt>Puissance conseillée</dt>
+                <dd className={power < selectedRift.recommendedPower ? styles.riftPowerLow : styles.riftPowerReady}>
+                  {formatCompact(selectedRift.recommendedPower)} · {power < selectedRift.recommendedPower ? "Danger" : "Prêt"}
+                </dd>
+              </div>
+              <div><dt>Votre puissance</dt><dd>{formatCompact(power)}</dd></div>
               <div><dt>Position</dt><dd>{Math.round(selectedRift.x)} · {Math.round(selectedRift.y)}</dd></div>
             </dl>
           </article>
@@ -903,6 +911,8 @@ export default function Hud({
   const panel = activePanel === undefined ? internalPanel : activePanel;
   const displayedPanel = panel === "equipment" ? "inventory" : panel;
   const selectedConnectionMode = preferredConnectionMode ?? internalConnectionMode;
+  const [displayName, displayedClass = "Aventurier"] = playerName.split(" · ", 2);
+  const playerStatus = `Niv. ${level} · ${displayedClass} · Rang ${rank ?? "—"}`;
 
   const visibleSkillSlots = useMemo(
     () =>
@@ -975,11 +985,11 @@ export default function Hud({
         <HudSurface className={styles.playerCard}>
         <div className={styles.identityRow}>
           <span className={styles.avatar} aria-hidden="true">
-            A
+            {displayName.trim().charAt(0).toUpperCase() || "A"}
           </span>
           <div className={styles.identityCopy}>
-            <strong>{playerName}</strong>
-            <span>{rank ? `Niveau ${level} · Rang ${rank}` : `Niveau ${level} · Non classé`}</span>
+            <strong title={playerName}>{displayName}</strong>
+            <span>{playerStatus}</span>
           </div>
           <span
             className={`${styles.connection} ${styles[`connection_${connectionStatus}`]}`}
@@ -1134,7 +1144,12 @@ export default function Hud({
             ) : null}
             {displayedPanel === "stats" ? <StatsPanel stats={stats} rank={rank} level={level} /> : null}
             {displayedPanel === "map" ? (
-              <RiftMapPanel rifts={rifts} playerPosition={playerMapPosition} mapSize={mapSize} />
+              <RiftMapPanel
+                rifts={rifts}
+                playerPosition={playerMapPosition}
+                mapSize={mapSize}
+                power={power}
+              />
             ) : null}
           </div>
         </HudSurface>

@@ -1,0 +1,215 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding:
+    max(8px, env(safe-area-inset-top, 0px))
+    max(8px, env(safe-area-inset-right, 0px))
+    max(8px, env(safe-area-inset-bottom, 0px))
+    max(8px, env(safe-area-inset-left, 0px));
+  background:
+    radial-gradient(circle at 50% 42%, rgba(45, 133, 121, 0.18), transparent 48%),
+    rgba(2, 9, 13, 0.76);
+  backdrop-filter: blur(7px);
+}
+
+.dialog {
+  width: min(680px, 100%);
+  max-height: 100%;
+  overflow: auto;
+  color: #e9f1f2;
+  border: 1px solid rgba(91, 218, 196, 0.34);
+  border-radius: 18px;
+  background:
+    linear-gradient(145deg, rgba(20, 43, 48, 0.97), rgba(7, 21, 27, 0.99) 62%),
+    #07151b;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.64), inset 0 1px rgba(255, 255, 255, 0.05);
+  scrollbar-width: thin;
+  scrollbar-color: #397b70 transparent;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.error {
+  margin: 8px 14px 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 125, 133, 0.42);
+  border-radius: 9px;
+  color: #ffd8da;
+  background: rgba(104, 24, 34, 0.48);
+  font: 750 10px/1.35 system-ui, sans-serif;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 13px 14px 11px;
+  border-bottom: 1px solid rgba(112, 209, 192, 0.16);
+  background: linear-gradient(90deg, rgba(74, 196, 174, 0.1), transparent 58%);
+}
+
+.masterSeal {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  place-items: center;
+  border: 1px solid #4cd7c0;
+  border-radius: 12px;
+  color: #bdf7ec;
+  background: #102e36;
+  box-shadow: inset 0 0 0 3px rgba(7, 16, 22, 0.75), 0 0 20px rgba(76, 215, 192, 0.13);
+  font: 900 19px/1 system-ui, sans-serif;
+}
+
+.header div { min-width: 0; }
+.header p {
+  margin: 0 0 2px;
+  color: #83ada8;
+  font: 800 9px/1.1 system-ui, sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.header h2 { margin: 0; color: #f0f6f5; font: 800 19px/1.1 Georgia, serif; }
+
+.close {
+  width: 42px;
+  height: 42px;
+  margin-left: auto;
+  border: 1px solid rgba(163, 198, 197, 0.18);
+  border-radius: 10px;
+  color: #abc3c5;
+  background: rgba(1, 11, 16, 0.48);
+  font: 500 23px/1 system-ui, sans-serif;
+}
+
+.intro {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 15px 5px;
+}
+.intro p { margin: 0; color: #dbe9e7; font: italic 600 13px/1.25 Georgia, serif; }
+.intro span { flex: 0 0 auto; color: #63d6c1; font: 800 8px/1.2 system-ui, sans-serif; letter-spacing: 0.08em; text-transform: uppercase; }
+
+.pathGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 9px 14px 11px;
+}
+
+.pathCard {
+  position: relative;
+  min-height: 178px;
+  padding: 12px 10px 10px;
+  overflow: hidden;
+  border: 1px solid rgba(145, 183, 184, 0.16);
+  border-radius: 14px;
+  color: #d7e2e4;
+  background: linear-gradient(155deg, rgba(26, 48, 55, 0.9), rgba(7, 19, 25, 0.92));
+  text-align: left;
+  transition: border-color 140ms ease, transform 140ms ease, background 140ms ease;
+}
+.pathCard::before {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  content: "";
+  background: var(--path-accent);
+  opacity: 0.42;
+}
+.pathCard:active { transform: scale(0.985); }
+.pathCardActive {
+  border-color: color-mix(in srgb, var(--path-accent) 72%, white 8%);
+  background: linear-gradient(155deg, color-mix(in srgb, var(--path-accent) 12%, #163039), #071319 70%);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--path-accent) 15%, transparent);
+}
+.pathIcon { display: grid; width: 36px; height: 36px; place-items: center; margin-bottom: 8px; border-radius: 10px; color: var(--path-accent); background: color-mix(in srgb, var(--path-accent) 12%, transparent); font-size: 20px; }
+.pathCard strong { display: block; color: #f0f5f5; font: 850 15px/1.05 Georgia, serif; }
+.pathCard small { display: block; margin-top: 3px; color: var(--path-accent); font: 800 8px/1 system-ui, sans-serif; letter-spacing: 0.09em; text-transform: uppercase; }
+.pathCard p { margin: 9px 0 28px; color: #9db1b5; font: 550 9px/1.35 system-ui, sans-serif; }
+.pathChoice { position: absolute; right: 10px; bottom: 10px; left: 10px; color: #b7c8ca; font: 800 8px/1 system-ui, sans-serif; letter-spacing: 0.04em; }
+.pathCardActive .pathChoice { color: var(--path-accent); }
+
+.confirmation {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 13px;
+  padding: 10px 14px 13px;
+  border-top: 1px solid rgba(112, 209, 192, 0.14);
+  background: rgba(1, 12, 17, 0.34);
+}
+.confirmation strong { display: block; margin-bottom: 3px; color: #d7e2e3; font: 800 10px/1.15 system-ui, sans-serif; }
+.confirmation p { max-width: 450px; margin: 0; color: #82999e; font: 600 8px/1.35 system-ui, sans-serif; }
+.confirmation button,
+.stateMessage button {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid rgba(91, 218, 196, 0.42);
+  border-radius: 11px;
+  color: #dffff9;
+  background: linear-gradient(180deg, #267f73, #15554f);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.12);
+  font: 850 9px/1.15 system-ui, sans-serif;
+}
+.confirmation button:disabled { color: #688085; border-color: rgba(120, 145, 148, 0.13); background: #10242a; box-shadow: none; }
+.confirmationReady { background: rgba(21, 84, 76, 0.13); }
+
+.stateMessage {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 14px;
+  padding: 22px 18px;
+}
+.stateIcon { display: grid; width: 52px; height: 52px; place-items: center; border: 1px solid rgba(76, 215, 192, 0.35); border-radius: 15px; color: #72dfcc; background: #102d34; font-size: 24px; }
+.stateMessage h3 { margin: 0 0 5px; color: #edf5f4; font: 800 16px/1.2 Georgia, serif; }
+.stateMessage p { margin: 0; color: #9eb2b5; font: 600 10px/1.45 system-ui, sans-serif; }
+
+@media (max-height: 430px) and (orientation: landscape) {
+  .overlay { backdrop-filter: none; }
+  .dialog { width: min(720px, 100%); }
+  .header { padding: 5px 10px; }
+  .masterSeal { width: 34px; height: 34px; flex-basis: 34px; border-radius: 9px; font-size: 15px; }
+  .header p { font-size: 10px; }
+  .header h2 { font-size: 16px; }
+  .close { width: 44px; height: 44px; font-size: 22px; }
+  .intro { padding: 7px 11px 3px; }
+  .intro p { font-size: 11px; }
+  .intro span { font-size: 10px; }
+  .pathGrid { gap: 6px; padding: 5px 10px 6px; }
+  .pathCard { min-height: 134px; padding: 8px; border-radius: 10px; }
+  .pathIcon { width: 30px; height: 30px; margin-bottom: 4px; border-radius: 7px; font-size: 17px; }
+  .pathCard strong { font-size: 13px; }
+  .pathCard small { font-size: 10px; }
+  .pathCard p { margin: 5px 0 25px; font-size: 10px; line-height: 1.3; }
+  .pathChoice { right: 8px; bottom: 7px; left: 8px; font-size: 10px; }
+  .confirmation { gap: 8px; padding: 6px 10px 7px; }
+  .confirmation strong { font-size: 10px; }
+  .confirmation p { font-size: 10px; line-height: 1.3; }
+  .confirmation button { min-height: 44px; padding: 0 12px; font-size: 10px; }
+  .stateMessage { padding: 14px; }
+  .error { margin: 5px 10px 0; padding: 5px 8px; font-size: 10px; }
+}
+
+@media (orientation: portrait) {
+  /* The game is landscape-only. Let the global orientation gate own portrait,
+     including when the phone rotates while this dialogue is already open. */
+  .overlay { display: none; }
+}

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { PlayerSnapshot } from "./types";
+import type { PlayerRank, PlayerSnapshot } from "./types";
 
 export const PLAYER_SAVE_VERSION = 2 as const;
 export const PLAYER_SAVE_STORAGE_KEY = "nouveau-mmo-player-save-v2";
@@ -51,11 +51,39 @@ export const persistedPlayerProfileSchema = z.object({
     }),
   ).max(200),
   equipment: savedEquipmentSchema,
+}).superRefine((profile, context) => {
+  const rankless = profile.rank === null;
+  const adventurer = profile.combatPath === "adventurer";
+  if (rankless !== adventurer) {
+    context.addIssue({
+      code: "custom",
+      path: ["combatPath"],
+      message: "Un Aventurier doit être sans rang et une voie éveillée doit avoir un rang.",
+    });
+  }
+  if (!rankless && profile.level < 10) {
+    context.addIssue({
+      code: "custom",
+      path: ["level"],
+      message: "L’éveil exige le niveau général 10.",
+    });
+  }
 });
 
 export type PersistedPlayerProfile = z.infer<typeof persistedPlayerProfileSchema>;
 
 const MASTERY_KEYS = ["melee", "ranged", "magic", "defense"] as const;
+const RANK_ORDER: Readonly<Record<PlayerRank, number>> = {
+  E: 0,
+  D: 1,
+  C: 2,
+  B: 3,
+  A: 4,
+  S: 5,
+  SS: 6,
+  SSS: 7,
+  OMEGA: 8,
+};
 
 /**
  * Browser saves are portable fallbacks, not authoritative multiplayer state.
@@ -67,8 +95,29 @@ export function isProfileProgressRegression(
   candidate: PersistedPlayerProfile,
   current: PersistedPlayerProfile,
 ): boolean {
+  const currentAwakened = current.rank !== null && current.combatPath !== "adventurer";
+  const candidateAwakened = candidate.rank !== null && candidate.combatPath !== "adventurer";
+
+  // Awakening and the selected combat path are irreversible. Check them before
+  // general levels, otherwise a higher-level reset snapshot could erase them.
+  if (currentAwakened && !candidateAwakened) return true;
+  if (currentAwakened && candidateAwakened) {
+    if (candidate.combatPath !== current.combatPath) return true;
+    if (RANK_ORDER[candidate.rank!] < RANK_ORDER[current.rank!]) return true;
+  }
+
   if (candidate.level !== current.level) return candidate.level < current.level;
   if (candidate.xp !== current.xp) return candidate.xp < current.xp;
+
+  // The level-10 awakening intentionally resets provisional offensive
+  // masteries before assigning 25 points to the chosen one. Only Defense must
+  // remain monotonic during this one legitimate transfer.
+  if (!currentAwakened && candidateAwakened) {
+    const next = candidate.masteries.defense;
+    const previous = current.masteries.defense;
+    if (next.level !== previous.level) return next.level < previous.level;
+    return next.xp < previous.xp;
+  }
 
   return MASTERY_KEYS.some((key) => {
     const next = candidate.masteries[key];

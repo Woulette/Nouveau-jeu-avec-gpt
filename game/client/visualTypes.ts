@@ -15,11 +15,12 @@ export const ADVENTURER_FRAME_COUNTS: Readonly<Record<AdventurerAction, number>>
   attack: 3,
 };
 
-export const CREATURE_KINDS = ["slime", "wolf", "corrupted", "boss"] as const;
+export const CREATURE_KINDS = ["slime", "boar", "wolf", "corrupted", "boss"] as const;
 export type CreatureKind = (typeof CREATURE_KINDS)[number];
 
 export const CREATURE_FRAME_COUNTS: Readonly<Record<CreatureKind, number>> = {
   slime: 3,
+  boar: 2,
   wolf: 2,
   corrupted: 2,
   boss: 3,

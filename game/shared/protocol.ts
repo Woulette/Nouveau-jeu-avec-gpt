@@ -29,6 +29,17 @@ export const clientMessageSchema = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("respawn"), ...sequenced }),
   z.object({
+    type: z.literal("interact-npc"),
+    npcId: z.string().trim().min(1).max(80),
+    ...sequenced,
+  }),
+  z.object({
+    type: z.literal("awaken"),
+    npcId: z.string().trim().min(1).max(80),
+    combatPath: z.enum(["melee", "ranged", "magic"]),
+    ...sequenced,
+  }),
+  z.object({
     type: z.literal("rift"),
     action: z.enum(["enter", "leave"]),
     riftId: z.string().min(1).max(80),

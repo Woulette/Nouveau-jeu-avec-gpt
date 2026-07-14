@@ -13,6 +13,10 @@
   --ui-blue: #6fa8ff;
   --ui-gold: #f4c95d;
   --ui-danger: #ff716c;
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
   position: fixed;
   inset: 0;
   z-index: 50;
@@ -62,11 +66,13 @@
 /* HUD de jeu */
 .playerCard {
   position: absolute;
-  top: max(8px, env(safe-area-inset-top));
-  left: max(8px, env(safe-area-inset-left));
-  width: clamp(250px, 31vw, 320px);
-  padding: 8px 9px 9px;
-  border-radius: 14px;
+  top: 0;
+  left: 0;
+  width: calc(clamp(210px, 24vw, 235px) + var(--safe-l));
+  padding: max(6px, calc(var(--safe-t) + 5px)) 7px 7px max(7px, calc(var(--safe-l) + 6px));
+  border-top: 0;
+  border-left: 0;
+  border-radius: 0 0 14px 0;
   transition: opacity 160ms ease;
 }
 
@@ -74,20 +80,20 @@
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 7px;
+  gap: 6px;
+  margin-bottom: 4px;
 }
 
 .avatar {
   display: grid;
-  flex: 0 0 34px;
-  width: 34px;
-  height: 34px;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
   place-items: center;
   border: 1px solid rgba(76, 215, 192, 0.72);
-  border-radius: 10px;
+  border-radius: 8px;
   color: #dffff8;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 900;
   background:
     radial-gradient(circle at 40% 28%, rgba(111, 168, 255, 0.25), transparent 42%),
@@ -103,17 +109,17 @@
 
 .identityCopy strong {
   overflow: hidden;
-  font-size: 13px;
+  font-size: 11.5px;
   letter-spacing: 0.01em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .identityCopy span {
-  margin-top: 3px;
+  margin-top: 2px;
   overflow: hidden;
   color: var(--ui-muted);
-  font-size: 9px;
+  font-size: 7.5px;
   font-weight: 750;
   letter-spacing: 0.06em;
   text-overflow: ellipsis;
@@ -122,9 +128,9 @@
 }
 
 .connection {
-  flex: 0 0 10px;
-  width: 10px;
-  height: 10px;
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
   margin-left: auto;
   border: 2px solid rgba(2, 14, 19, 0.8);
   border-radius: 50%;
@@ -158,12 +164,12 @@
 
 .primaryMeters {
   display: grid;
-  gap: 4px;
+  gap: 3px;
 }
 
 .meter {
   position: relative;
-  height: 14px;
+  height: 12px;
   overflow: hidden;
   border: 1px solid rgba(158, 177, 185, 0.18);
   border-radius: 5px;
@@ -197,7 +203,7 @@
   align-items: center;
   justify-content: space-between;
   color: white;
-  font-size: 8.5px;
+  font-size: 7.5px;
   font-weight: 850;
   text-shadow: 0 1px 2px #001018;
 }
@@ -206,19 +212,21 @@
 
 .powerBadge {
   position: absolute;
-  top: max(8px, env(safe-area-inset-top));
-  right: max(8px, env(safe-area-inset-right));
+  top: 0;
+  right: 0;
   display: grid;
-  min-width: 108px;
-  padding: 7px 11px;
-  border-radius: 13px;
+  min-width: calc(88px + var(--safe-r));
+  padding: max(6px, calc(var(--safe-t) + 5px)) max(8px, calc(var(--safe-r) + 7px)) 6px 9px;
+  border-top: 0;
+  border-right: 0;
+  border-radius: 0 0 0 12px;
   text-align: right;
   transition: opacity 160ms ease;
 }
 
 .powerBadge span {
   color: var(--ui-muted);
-  font-size: 8px;
+  font-size: 7px;
   font-weight: 850;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -226,19 +234,20 @@
 
 .powerBadge strong {
   color: var(--ui-accent);
-  font-size: 18px;
+  font-size: 16px;
   font-variant-numeric: tabular-nums;
   text-shadow: 0 0 15px rgba(76, 215, 192, 0.24);
 }
 
 .skillBar {
   position: absolute;
-  bottom: max(8px, env(safe-area-inset-bottom));
+  bottom: 0;
   left: 50%;
   display: flex;
   gap: 6px;
-  padding: 5px;
-  border-radius: 14px;
+  padding: 4px 5px max(4px, var(--safe-b));
+  border-bottom: 0;
+  border-radius: 14px 14px 0 0;
   transform: translateX(-50%);
   transition: opacity 160ms ease;
 }
@@ -299,8 +308,8 @@
 
 .menuDock {
   position: absolute;
-  right: max(8px, env(safe-area-inset-right));
-  bottom: max(8px, env(safe-area-inset-bottom));
+  right: 0;
+  bottom: 0;
   display: grid;
   justify-items: end;
   gap: 7px;
@@ -309,12 +318,14 @@
 
 .menuButton {
   display: grid;
-  width: 52px;
-  height: 52px;
-  padding: 9px 13px 6px;
+  width: calc(48px + var(--safe-r));
+  height: calc(48px + var(--safe-b));
+  padding: 7px max(9px, calc(var(--safe-r) + 9px)) max(6px, calc(var(--safe-b) + 6px)) 11px;
   place-content: center;
   gap: 3px;
-  border-radius: 13px;
+  border-right: 0;
+  border-bottom: 0;
+  border-radius: 13px 0 0;
   cursor: pointer;
 }
 
@@ -342,6 +353,7 @@
 .quickMenu {
   display: grid;
   width: 190px;
+  margin-right: max(4px, var(--safe-r));
   padding: 6px;
   gap: 5px;
   border-radius: 13px;
@@ -418,10 +430,11 @@
 
 .rewardFeed {
   position: absolute;
-  bottom: calc(max(8px, env(safe-area-inset-bottom)) + 68px);
+  top: calc(max(8px, var(--safe-t)) + 82px);
+  bottom: auto;
   left: 50%;
   display: grid;
-  width: min(320px, calc(100vw - 150px));
+  width: min(280px, calc(100vw - 32px));
   gap: 5px;
   transform: translateX(-50%);
   pointer-events: none;
@@ -429,11 +442,11 @@
 
 .rewardCard {
   display: grid;
-  min-height: 48px;
-  grid-template-columns: 38px minmax(0, 1fr) auto;
+  min-height: 40px;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
-  padding: 5px 9px 5px 5px;
+  gap: 7px;
+  padding: 4px 8px 4px 4px;
   border: 1px solid rgba(76, 215, 192, 0.38);
   border-radius: 12px;
   background: var(--ui-bg-deep);
@@ -442,25 +455,25 @@
 }
 
 @keyframes rewardEnter {
-  from { opacity: 0; transform: translateY(7px) scale(0.98); }
+  from { opacity: 0; transform: translateY(-7px) scale(0.98); }
 }
 
 .rewardIcon {
   display: grid;
-  width: 38px;
-  height: 38px;
+  width: 30px;
+  height: 30px;
   place-items: center;
   border: 1px solid currentColor;
   border-radius: 9px;
   color: var(--ui-accent);
-  font-size: 19px;
+  font-size: 16px;
   background: rgba(255, 255, 255, 0.04);
 }
 
 .rewardCopy { display: grid; min-width: 0; line-height: 1.1; }
-.rewardCopy small { color: var(--ui-accent); font-size: 8px; font-weight: 900; text-transform: uppercase; }
-.rewardCopy strong { overflow: hidden; margin-top: 3px; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.rewardQuantity { color: var(--ui-gold); font-size: 11px; font-weight: 900; }
+.rewardCopy small { color: var(--ui-accent); font-size: 7px; font-weight: 900; text-transform: uppercase; }
+.rewardCopy strong { overflow: hidden; margin-top: 2px; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.rewardQuantity { color: var(--ui-gold); font-size: 10px; font-weight: 900; }
 
 .hudPanelOpen .playerCard,
 .hudPanelOpen .powerBadge,
@@ -475,10 +488,10 @@
 .panel {
   position: absolute;
   z-index: 60;
-  top: max(5px, env(safe-area-inset-top));
-  right: max(5px, env(safe-area-inset-right));
-  bottom: max(5px, env(safe-area-inset-bottom));
-  left: max(5px, env(safe-area-inset-left));
+  top: max(5px, var(--safe-t));
+  right: max(5px, var(--safe-r));
+  bottom: max(5px, var(--safe-b));
+  left: max(5px, var(--safe-l));
   display: grid;
   min-width: 0;
   min-height: 0;
@@ -1221,6 +1234,7 @@
 
 .statIdentity {
   display: grid;
+  flex: 1 1 auto;
   min-width: 0;
   gap: 2px;
 }
@@ -1235,6 +1249,7 @@
 
 .trainingRow {
   display: flex;
+  width: 100%;
   min-width: 0;
   align-items: center;
   gap: 5px;
@@ -1243,11 +1258,13 @@
 .trainingTrack {
   position: relative;
   display: block;
-  flex: 1 1 58px;
-  height: 4px;
+  flex: 1 1 68px;
+  height: 7px;
   overflow: hidden;
+  border: 1px solid rgba(76, 215, 192, 0.28);
   border-radius: 99px;
-  background: rgba(1, 10, 14, 0.72);
+  background: rgba(1, 10, 14, 0.84);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.72);
 }
 
 .trainingTrack i {
@@ -1256,19 +1273,25 @@
   width: var(--meter-progress);
   border-radius: inherit;
   background: linear-gradient(90deg, var(--ui-accent-deep), var(--ui-accent));
+  box-shadow: 0 0 8px rgba(76, 215, 192, 0.42);
 }
 
 .trainingLabel,
 .levelOnly {
   overflow: hidden;
   color: var(--ui-muted);
-  font-size: 7.5px;
+  font-size: 8px;
   font-style: normal;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.trainingLabel { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+.trainingLabel {
+  flex: 0 0 auto;
+  color: #c8d7db;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
 
 .statMetric {
   display: grid;
@@ -1470,7 +1493,10 @@
   padding: 5px;
   align-content: start;
   gap: 3px;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(76, 215, 192, 0.42) transparent;
 }
 
 .journalLabels,
@@ -1501,8 +1527,6 @@
 .riftJournal > button small { color: #71dab7; font-size: 7px; text-align: right; }
 .riftJournal > button .escapedText { color: var(--ui-danger); }
 .riftJournal > p { margin: 36px 8px; color: var(--ui-muted); font-size: 9px; text-align: center; }
-.hiddenRifts { justify-self: end; color: var(--ui-muted); font-size: 8px; }
-
 .riftDetails {
   position: relative;
   display: grid;
@@ -1523,6 +1547,8 @@
 .riftDetails dl > div { display: flex; min-width: 0; min-height: 28px; align-items: center; justify-content: space-between; gap: 7px; padding: 4px 7px; border: 1px solid var(--ui-line-soft); border-radius: 6px; background: rgba(255, 255, 255, 0.018); }
 .riftDetails dt { color: var(--ui-muted); font-size: 8px; }
 .riftDetails dd { min-width: 0; margin: 0; overflow: hidden; font-size: 8px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.riftPowerLow { color: var(--ui-danger); }
+.riftPowerReady { color: var(--ui-accent); }
 
 .riftOverview {
   display: grid;

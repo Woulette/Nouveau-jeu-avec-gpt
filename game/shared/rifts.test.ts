@@ -1,15 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  RIFT_RANK_CONFIG,
+  RIFT_RANKS,
   RIFT_INSTANCE_ROOMS,
   RIFT_LIFETIME_MS,
+  advanceRift,
   advanceRankERift,
   completeRiftRoom,
+  createRift,
   createRankERift,
   createRiftInstance,
   currentRiftRoom,
+  getRiftRankConfig,
   getRiftInstanceDuration,
   getRiftTiming,
+  spawnNextRift,
   spawnNextRankERift,
   summarizeRiftInstance,
 } from "./rifts";
@@ -121,6 +127,100 @@ describe("rank-E dynamic rift cycle", () => {
     expect(() => spawnNextRankERift({ previous: escaped, locations: [{ id: "a", position: { x: 2, y: 2 } }], spawnedAt: 1, random: () => 1 })).toThrow(/\[0, 1\)/i);
     expect(() => createRankERift({ id: " ", position: { x: 1, y: 1 }, spawnedAt: 0 })).toThrow(/empty/i);
     expect(() => createRankERift({ id: "bad-position", position: { x: 1.5, y: 1 }, spawnedAt: 0 })).toThrow(/integer/i);
+  });
+});
+
+describe("generic E-to-S rift core", () => {
+  it("defines complete, strictly increasing balance and known guaranteed rewards", () => {
+    expect(Object.keys(RIFT_RANK_CONFIG)).toEqual(RIFT_RANKS);
+
+    let previousPower = 0;
+    let previousCompletionXp = 0;
+    let previousHpMultiplier = 0;
+    for (const rank of RIFT_RANKS) {
+      const config = getRiftRankConfig(rank);
+      expect(config.rank).toBe(rank);
+      expect(config.recommendedPower).toBeGreaterThan(previousPower);
+      expect(config.completionXp).toBeGreaterThan(previousCompletionXp);
+      expect(config.monsterMultipliers.hp).toBeGreaterThan(previousHpMultiplier);
+      expect(config.guaranteedRewards.length).toBeGreaterThan(0);
+      expect(config.guaranteedRewards.every((reward) => reward.quantity > 0)).toBe(true);
+      previousPower = config.recommendedPower;
+      previousCompletionXp = config.completionXp;
+      previousHpMultiplier = config.monsterMultipliers.hp;
+    }
+  });
+
+  it.each(RIFT_RANKS)("creates, advances, and summarizes a rank-%s run without losing its rank", (rank) => {
+    const rift = createRift({
+      id: `rift-${rank.toLowerCase()}-1`,
+      rank,
+      position: { x: 10, y: 10 },
+      spawnedAt: 1_000,
+    });
+    expect(rift).toMatchObject({ rank, status: "open", expiresAt: 1_000 + RIFT_LIFETIME_MS });
+    expect(advanceRift(rift, rift.expiresAt)).toMatchObject({ rank, status: "boss-escaped" });
+
+    let instance = createRiftInstance({
+      id: `instance-${rank.toLowerCase()}`,
+      riftId: rift.id,
+      rank,
+      startedAt: 2_000,
+    });
+    instance = completeRiftRoom(instance, { room: 1, clearedAt: 3_000 });
+    instance = completeRiftRoom(instance, { room: 2, clearedAt: 4_000 });
+    instance = completeRiftRoom(instance, {
+      room: 3,
+      clearedAt: 5_000,
+      rewards: {
+        generalXp: getRiftRankConfig(rank).completionXp,
+        items: getRiftRankConfig(rank).guaranteedRewards,
+      },
+    });
+    expect(summarizeRiftInstance(instance, 10_000)).toMatchObject({
+      rank,
+      completed: true,
+      roomsCleared: 3,
+      rewards: {
+        generalXp: getRiftRankConfig(rank).completionXp,
+        items: getRiftRankConfig(rank).guaranteedRewards,
+      },
+    });
+  });
+
+  it("can change rank explicitly between two generic cycle spawns", () => {
+    const previous = advanceRift(
+      createRift({ id: "rift-e-old", rank: "E", position: { x: 10, y: 10 }, spawnedAt: 0 }),
+      RIFT_LIFETIME_MS,
+    );
+    const next = spawnNextRift({
+      previous,
+      rank: "S",
+      locations: [{ id: "citadel", position: { x: 20, y: 20 } }],
+      spawnedAt: RIFT_LIFETIME_MS,
+      random: () => 0,
+    });
+    expect(next).toMatchObject({
+      id: `rift-s-citadel-${RIFT_LIFETIME_MS}`,
+      rank: "S",
+      position: { x: 20, y: 20 },
+      status: "open",
+    });
+  });
+
+  it("keeps all legacy rank-E wrappers byte-for-byte compatible", () => {
+    const rift = createRankERift({ id: "legacy-e", position: { x: 4, y: 5 }, spawnedAt: 0 });
+    const escaped = advanceRankERift(rift, RIFT_LIFETIME_MS);
+    const next = spawnNextRankERift({
+      previous: escaped,
+      locations: [{ id: "legacy", position: { x: 8, y: 9 } }],
+      spawnedAt: RIFT_LIFETIME_MS,
+      random: () => 0,
+    });
+    const instance = createRiftInstance({ id: "legacy-instance", riftId: next.id, startedAt: 0 });
+    expect(next.rank).toBe("E");
+    expect(next.id).toBe(`rift-e-legacy-${RIFT_LIFETIME_MS}`);
+    expect(instance.rank).toBe("E");
   });
 });
 

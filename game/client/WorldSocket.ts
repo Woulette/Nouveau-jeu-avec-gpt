@@ -1,6 +1,7 @@
 import type { ClientMessage } from "@/game/shared/protocol";
 import type { PreferredConnectionMode } from "@/game/shared/save";
 import type {
+  AwakenedCombatPath,
   EquipmentSlot,
   GameEvent,
   PublicMapDefinition,
@@ -147,6 +148,14 @@ export class WorldSocket {
 
   respawn() {
     this.send({ type: "respawn", sequence: this.nextSequence() });
+  }
+
+  interactNpc(npcId: string) {
+    this.send({ type: "interact-npc", npcId, sequence: this.nextSequence() });
+  }
+
+  awaken(npcId: string, combatPath: AwakenedCombatPath) {
+    this.send({ type: "awaken", npcId, combatPath, sequence: this.nextSequence() });
   }
 
   enterRift(riftId: string) {

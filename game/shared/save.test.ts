@@ -101,4 +101,75 @@ describe("versioned player saves", () => {
     expect(isProfileProgressRegression(levelledMastery, validProfile)).toBe(false);
     expect(isProfileProgressRegression(validProfile, levelledMastery)).toBe(true);
   });
+
+  it("accepts the designed awakening transfer while protecting its irreversible path", () => {
+    const eligible: PersistedPlayerProfile = {
+      ...validProfile,
+      level: 10,
+      xp: 42,
+      masteries: {
+        melee: { level: 8, xp: 17 },
+        ranged: { level: 0, xp: 0 },
+        magic: { level: 0, xp: 0 },
+        defense: { level: 6, xp: 11 },
+      },
+    };
+    const awakenedArcher: PersistedPlayerProfile = {
+      ...eligible,
+      rank: "E",
+      combatPath: "ranged",
+      className: "Archer",
+      masteries: {
+        melee: { level: 0, xp: 0 },
+        ranged: { level: 25, xp: 0 },
+        magic: { level: 0, xp: 0 },
+        defense: { level: 6, xp: 11 },
+      },
+    };
+
+    expect(persistedPlayerProfileSchema.safeParse(awakenedArcher).success).toBe(true);
+    expect(isProfileProgressRegression(awakenedArcher, eligible)).toBe(false);
+    expect(isProfileProgressRegression(eligible, awakenedArcher)).toBe(true);
+    expect(
+      isProfileProgressRegression(
+        { ...awakenedArcher, combatPath: "magic", className: "Magicien" },
+        awakenedArcher,
+      ),
+    ).toBe(true);
+    expect(
+      isProfileProgressRegression(
+        { ...awakenedArcher, rank: "D" },
+        awakenedArcher,
+      ),
+    ).toBe(false);
+    expect(
+      isProfileProgressRegression(
+        { ...awakenedArcher, rank: "E" },
+        { ...awakenedArcher, rank: "D" },
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects impossible rank, path and level combinations", () => {
+    expect(
+      persistedPlayerProfileSchema.safeParse({
+        ...validProfile,
+        rank: "E",
+      }).success,
+    ).toBe(false);
+    expect(
+      persistedPlayerProfileSchema.safeParse({
+        ...validProfile,
+        combatPath: "melee",
+      }).success,
+    ).toBe(false);
+    expect(
+      persistedPlayerProfileSchema.safeParse({
+        ...validProfile,
+        rank: "E",
+        combatPath: "melee",
+        className: "Épéiste",
+      }).success,
+    ).toBe(false);
+  });
 });

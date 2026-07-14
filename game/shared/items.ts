@@ -176,6 +176,51 @@ const itemCatalog = {
     category: "resource",
     rarity: "rare",
   },
+  "resine-ambre": {
+    id: "resine-ambre",
+    name: "Résine d’Ambre",
+    icon: "⬟",
+    description: "Une résine chaude recueillie sur les créatures du Bois d’Ambre.",
+    kind: "material",
+    category: "resource",
+    rarity: "uncommon",
+  },
+  "cendre-mana": {
+    id: "cendre-mana",
+    name: "Cendre de mana",
+    icon: "✧",
+    description: "Une cendre froide chargée de mana venue des marais de rang C.",
+    kind: "material",
+    category: "resource",
+    rarity: "rare",
+  },
+  "coeur-basalte": {
+    id: "coeur-basalte",
+    name: "Cœur de basalte",
+    icon: "◆",
+    description: "Un noyau minéral encore vibrant des Plateaux Brisés.",
+    kind: "material",
+    category: "resource",
+    rarity: "rare",
+  },
+  "eclat-eclipse": {
+    id: "eclat-eclipse",
+    name: "Éclat d’éclipse",
+    icon: "◐",
+    description: "Un fragment obscur qui ne reflète presque aucune lumière.",
+    kind: "material",
+    category: "resource",
+    rarity: "epic",
+  },
+  "fragment-abyssal": {
+    id: "fragment-abyssal",
+    name: "Fragment abyssal",
+    icon: "✦",
+    description: "Une matière instable arrachée à la Frontière Abyssale.",
+    kind: "material",
+    category: "resource",
+    rarity: "epic",
+  },
 } as const satisfies Readonly<Record<string, ItemDefinition>>;
 
 export type ItemId = keyof typeof itemCatalog;
@@ -195,6 +240,11 @@ export const STARTER_INVENTORY: Readonly<Record<ItemId, number>> = {
   "croc-de-faille": 0,
   "fragment-de-faille": 0,
   "poussiere-dimensionnelle": 0,
+  "resine-ambre": 0,
+  "cendre-mana": 0,
+  "coeur-basalte": 0,
+  "eclat-eclipse": 0,
+  "fragment-abyssal": 0,
 };
 
 const RANK_INDEX: Readonly<Record<PlayerRank, number>> = {

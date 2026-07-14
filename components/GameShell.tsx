@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 
 import { prepareOfflineCache } from "@/game/client/offlineCache";
+import { STARTER_MAP } from "@/game/shared/world";
 
+import AwakeningDialog, { type HudAwakeningDialogue } from "./AwakeningDialog";
 import Hud, {
   type HudConnectionStatus,
   type HudConnectionMode,
@@ -40,6 +42,8 @@ interface GameHudState {
   mapSize: HudMapSize;
   preferredConnectionMode: HudConnectionMode;
   riftCompletion: HudRiftCompletion | null;
+  awakeningDialogue: HudAwakeningDialogue | null;
+  awakeningError: string | null;
 }
 
 export type GameHudUpdate = Partial<GameHudState>;
@@ -170,9 +174,11 @@ export default function GameShell() {
     alive: true,
     rifts: [],
     playerMapPosition: { x: 17, y: 27 },
-    mapSize: { width: 64, height: 48 },
+    mapSize: { width: STARTER_MAP.width, height: STARTER_MAP.height },
     preferredConnectionMode: "online",
     riftCompletion: null,
+    awakeningDialogue: null,
+    awakeningError: null,
   });
 
   useEffect(() => {
@@ -229,6 +235,25 @@ export default function GameShell() {
         }}
         onDismissRiftCompletion={() => setHud((current) => ({ ...current, riftCompletion: null }))}
       />
+
+      {hud.awakeningDialogue ? (
+        <AwakeningDialog
+          dialogue={hud.awakeningDialogue}
+          error={hud.awakeningError}
+          onClose={() => setHud((current) => ({
+            ...current,
+            awakeningDialogue: null,
+            awakeningError: null,
+          }))}
+          onAwaken={(combatPath) => {
+            setHud((current) => ({ ...current, awakeningError: null }));
+            dispatchToGame("ui:awaken", {
+              npcId: hud.awakeningDialogue?.npcId,
+              combatPath,
+            });
+          }}
+        />
+      ) : null}
     </main>
   );
 }

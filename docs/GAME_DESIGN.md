@@ -240,18 +240,19 @@ Les récompenses nécessitent une participation réelle afin d'éviter qu'un jou
 
 ### Cycle des failles dynamiques
 
-- Des portails apparaissent périodiquement à plusieurs emplacements possibles du monde. La première zone conserve toujours une faille E immédiatement disponible pour les essais ; les apparitions suivantes utilisent provisoirement un intervalle aléatoire de 15 à 45 minutes et un maximum de trois failles simultanées.
+- Le Val d’Aube étendu possède six emplacements de portail stables, un pour chacun des rangs **E, D, C, B, A et S**. Un monde neuf crée immédiatement ces six failles afin que toute la progression soit visible et testable.
+- Après la fermeture ou l’expiration d’un portail, les apparitions suivantes utilisent provisoirement un intervalle aléatoire de 15 à 45 minutes et un maximum de six failles simultanées. Le système recrée en priorité un rang absent avant de dupliquer un rang déjà actif.
 - Une faille reste ouverte pendant **24 heures réelles** à partir de son apparition.
 - Si elle n'est pas fermée avant l'échéance, son Gardien sort dans le monde ouvert, devient agressif et attaque les joueurs proches.
 - Dans ce cas, le Gardien extérieur doit d'abord être vaincu, puis l'intérieur de la faille doit encore être terminé pour la refermer définitivement.
 - Si l'échéance survient pendant une instance, le joueur est renvoyé dans le monde ouvert. Le serveur refuse également toute fermeture tardive tant que le Gardien extérieur est vivant : terminer l'intérieur ne peut jamais le supprimer ni contourner cette étape.
 - Une faille terminée disparaît immédiatement. Elle n'entre dans aucun temps de recharge d'une heure et ne peut pas être relancée ; une nouvelle faille apparaîtra plus tard à un emplacement disponible.
-- En mode local ou hors ligne, le cycle est sauvegardé séparément et de façon versionnée : identifiants, positions, dates d'apparition et d'expiration, prochaine apparition planifiée ainsi que position et PV d'un Gardien échappé. Fermer puis rouvrir le jeu ne remet donc pas les 24 heures à zéro.
+- En mode local ou hors ligne, le cycle est sauvegardé séparément dans un format `v2` : rangs, identifiants, positions, dates d'apparition et d'expiration, prochaine apparition planifiée ainsi que position et PV d'un Gardien échappé. Les anciennes sauvegardes de failles `v1` de rang E migrent sans réinitialiser leurs dates ni leur boss extérieur. Si elles contenaient plusieurs failles E, ces portails historiques sont conservés pendant que D à S sont ajoutées : le monde peut monter temporairement à huit portails, puis revient naturellement à la limite normale de six à mesure que ces doublons sont résolus.
 - Le monde partagé en ligne utilise encore un royaume en mémoire dans cette tranche. Ses failles restent cohérentes tant que ce royaume vit, mais une persistance réelle après redémarrage ou redéploiement attend la base de données MMO.
 
-### Première faille E jouable
+### Failles E à S jouables
 
-La première instance de faille est individuelle dans le prototype et contient trois salles reliées :
+Chaque rang réutilise la même logique d’instance individuelle à trois salles reliées, avec des noms de créatures, niveaux, PV, Défense, dégâts, cadence, XP et récompenses qui augmentent selon le rang :
 
 1. une première vague de créatures distordues ;
 2. une deuxième vague plus dangereuse ;
@@ -259,12 +260,12 @@ La première instance de faille est individuelle dans le prototype et contient t
 
 Chaque salle verrouille la progression vers la suivante tant que ses monstres sont vivants. Après une vague, le joueur avance physiquement dans le couloir jusqu'à la salle suivante. Vaincre le Gardien ferme le portail, ramène automatiquement le personnage dans le monde ouvert et ouvre une fenêtre récapitulative indiquant :
 
-- « Portail rang E terminé » ;
+- le rang exact du portail terminé ;
 - l'XP générale totale gagnée dans le portail, bonus final compris ;
 - les équipements et ressources récupérés ;
 - le temps total passé à l'intérieur.
 
-La récompense garantie de test comprend actuellement trois Poussières dimensionnelles et une Lame-croc de faille, en plus du butin réellement obtenu sur les créatures. Ces valeurs restent équilibrables.
+La faille E conserve sa récompense de test de trois Poussières dimensionnelles et une Lame-croc de faille. Les rangs D à S possèdent leurs propres multiplicateurs, XP de fermeture et quantités garanties. Toutes ces valeurs restent équilibrables après les tests de combat.
 
 ### Carte et journal des failles
 
@@ -374,9 +375,10 @@ Les distances de détection, de poursuite, d'abandon et d'attaque devront être 
 
 ### Régénération hors combat
 
-- Un personnage vivant récupère **2 PV par seconde complète hors combat**, sans dépasser ses PV maximums.
+- Un personnage vivant récupère **2 PV par seconde hors combat**, sans dépasser ses PV maximums.
 - Donner ou recevoir une attaque remet immédiatement le délai hors combat à zéro.
-- Le personnage est considéré hors combat après cinq secondes sans attaque donnée ni reçue ; le premier soin de +2 arrive après la première seconde complète suivante, soit six secondes après le dernier impact.
+- Le premier soin de **+1 PV** apparaît exactement deux secondes après la dernière attaque donnée ou reçue. Les soins suivants rendent +1 toutes les 500 ms : la vie monte donc visiblement de 1 en 1 tout en totalisant 2 PV par seconde.
+- Un tick serveur retardé ne regroupe jamais plusieurs soins dans une hausse visible : au retour d’un onglet suspendu, un seul `+1` est appliqué, puis le rythme normal de 500 ms reprend.
 - Un personnage mort ne se régénère jamais. Sa régénération reprend normalement après sa réapparition.
 
 ### Orientation et interface
@@ -384,7 +386,9 @@ Les distances de détection, de poursuite, d'abandon et d'attaque devront être 
 - Le jeu se joue **uniquement en paysage** à compter de cette décision.
 - En portrait, un écran simple demande au joueur de tourner son téléphone ; les commandes de jeu et les panneaux ne doivent pas être utilisables tant que l'appareil n'est pas revenu en paysage.
 - Le passage portrait-paysage doit restaurer immédiatement un canvas à la taille exacte du nouvel écran, sans étirement ni conservation d'une mauvaise taille.
-- La caméra de jeu utilise 90 % du zoom paysage précédent afin de montrer davantage du monde sur téléphone comme sur ordinateur, sans réduire l'interface HTML.
+- La caméra de jeu utilise **85 %** du zoom paysage précédent afin de montrer davantage du monde sur téléphone comme sur ordinateur, sans réduire l'interface HTML.
+- Les surfaces permanentes du HUD touchent les bords physiques de l’écran. Sur iPhone, seul leur contenu utile est décalé par `safe-area-inset-*` afin que la Dynamic Island, l’encoche et l’indicateur Home ne masquent ni texte ni bouton.
+- La carte compacte du joueur occupe le coin supérieur gauche avec une identité courte ; Puissance touche le bord supérieur droit, les compétences le bord inférieur et le menu le coin inférieur droit.
 - L'interface doit utiliser le moins d'espace permanent possible.
 - Le menu compact propose des entrées distinctes. **Inventaire** ouvre la fenêtre combinée Inventaire + Équipement ; **Statistiques** ouvre uniquement les statistiques ; **Carte des failles** ouvre la carte et son journal.
 - Une fenêtre ne contient pas les onglets permettant de basculer vers l'autre : le joueur ferme la fenêtre actuelle puis choisit lui-même une autre entrée du menu.
@@ -392,11 +396,13 @@ Les distances de détection, de poursuite, d'abandon et d'attaque devront être 
 - La fenêtre Inventaire + Équipement place le mannequin et ses six slots à gauche, la grille filtrable et le portefeuille au centre, puis la fiche de l'objet sélectionné à droite.
 - La fenêtre Statistiques est une vue séparée, compacte et fixe. Les six statistiques — Corps-à-corps, Distance, Magie, Défense, Énergie et Vitesse — doivent toutes tenir simultanément dans la hauteur disponible en paysage, **sans aucun défilement**.
 - Chaque statistique occupe une ligne entière, les unes sous les autres, avec les colonnes **Base, Combat, Équipement et Total** dans cet ordre. Les statistiques entraînables montrent aussi leur progression d'entraînement ; la Vitesse montre sa valeur, sa prochaine augmentation liée au niveau et le plafond 300.
-- Un butin ramassé automatiquement affiche pendant quelques secondes son icône, son nom et sa quantité juste au-dessus de la barre de compétences.
+- L’XP apparaît dans un toast compact en haut-centre. Le butin affiche séparément son icône, son nom et sa quantité dans cette même zone haute ; il n’est jamais dupliqué au milieu de l’écran ni placé au-dessus de la barre de compétences.
 
 ### Monde et contenu initial
 
-Le premier prototype doit prévoir une petite ville, une zone extérieure, plusieurs types de monstres, de l'XP générale, de l'XP d'entraînement, du butin, de l'équipement, un inventaire, des statistiques, un boss et une première faille. Les valeurs précises pourront être proposées pendant l'implémentation puis ajustées après test.
+Le Val d’Aube mesure désormais **112 × 72 cases**. La ville d’origine reste à l’ouest et six régions reliées matérialisent la montée de difficulté : Prairies éveillées E, Bois d’Ambre D, Marais de Cendre C, Plateaux Brisés B, Lande de l’Éclipse A et Frontière Abyssale S.
+
+La première population extérieure comprend quinze créatures, avec au moins dix espèces ou variantes distinctes. Les zones supérieures ajoutent notamment Warg d’Ambre, Scarabée résineux, Gélatine de cendre, Molosse de cendre, Sanglier de basalte, Traqueur des plateaux, Spectre d’éclipse, Gélatine du vide, Gueule abyssale et Sentinelle abyssale. Leurs PV, dégâts, Défense, comportement, XP, détection et butin augmentent avec l’éloignement. Les ressources propres aux nouvelles zones sont Résine d’Ambre, Cendre de mana, Cœur de basalte, Éclat d’éclipse et Fragment abyssal.
 
 ## 7. Fonctionnement MMO et test mobile
 
@@ -439,10 +445,11 @@ La première tranche a pour objectif de permettre, sur téléphone comme sur ord
 7. de gagner de l'XP générale et de l'XP d'entraînement séparées ;
 8. de recevoir du butin, de l'ajouter à l'inventaire et d'équiper les objets compatibles ;
 9. de consulter la fenêtre combinée Inventaire + Équipement et la fenêtre séparée Statistiques, toutes deux sans défilement structurel inutile ;
-10. d'ouvrir la carte, consulter le journal et entrer dans une faille E dynamique ;
-11. de traverser ses trois salles, vaincre le Gardien et recevoir le bilan complet du portail ;
-12. de continuer à jouer en mode hors ligne et de retrouver sa sauvegarde locale sur le même appareil ;
-13. de voir au minimum les déplacements des autres joueurs présents dans la même zone lorsque le serveur MMO est disponible.
+10. d’atteindre le niveau 10, parler réellement au Maître du QG et confirmer une voie irréversible donnant le rang E ;
+11. d'ouvrir la carte, consulter le journal et entrer dans une faille dynamique de rang E à S ;
+12. de traverser ses trois salles, vaincre le Gardien et recevoir le bilan complet du portail ;
+13. de continuer à jouer en mode hors ligne et de retrouver sa sauvegarde locale sur le même appareil ;
+14. de voir au minimum les déplacements des autres joueurs présents dans la même zone lorsque le serveur MMO est disponible.
 
 Dans cette tranche, les quatre emplacements de compétence sont visibles mais verrouillés pour l'Aventurier. À partir du niveau 10, l'éveil au QG attribue le rang E et permet le choix permanent de voie.
 
@@ -458,15 +465,14 @@ Dans cette tranche, les quatre emplacements de compétence sont visibles mais ve
 - interface mobile compacte exclusivement en paysage, avec invitation à tourner l'appareil en portrait ;
 - première synchronisation multijoueur et mode de test local ;
 - sauvegarde locale versionnée, sélection en ligne/hors ligne et cache de l'application ;
-- cycle de failles dynamiques E, carte, journal, trois salles, boss échappé et fenêtre de récompenses ;
+- Maître du QG interactif, approche automatique, dialogue de niveau, choix irréversible Épéiste/Archer/Magicien et attribution autoritaire du rang E ;
+- cycle de failles dynamiques E à S, carte, journal, trois salles, contenu mis à l’échelle, boss échappé et fenêtre de récompenses ;
+- monde ouvert 112 × 72, six régions de difficulté et quinze créatures extérieures ;
 - sauvegardes régulières du code sur GitHub et version testable sur Vercel.
 
-### Étape 2 — Éveil au QG et progression classée
+### Étape 2 — Compétences et progression classée
 
-- Aventurier sans rang jusqu'au niveau 10, PNJ du QG et séquence d'éveil ;
-- attribution du rang E uniquement après l'éveil, puis formule définitive de l'indice de puissance et seuil du rang D ;
-- présentation et confirmation du choix irréversible Épéiste, Archer ou Magicien ;
-- conversion de l'entraînement provisoire de l'Aventurier et attribution des 25 points ;
+- formule définitive de l'indice de puissance et seuil de promotion du rang D ;
 - premières compétences actives, portée propre à chaque voie, mana et temps de recharge ;
 - premier équipement D et équilibrage de la boucle de faille E déjà jouable.
 
@@ -505,8 +511,9 @@ Les fondations sont suffisamment définies pour construire et tester. Les sujets
 ## 11. État du projet
 
 - Phase actuelle : première tranche jouable en cours d'implémentation.
-- État du 14 juillet 2026 : l'interface a été reconstruite dans un thème ardoise-jade ; la caméra paysage est dézoomée à 90 %, l'inventaire en trois zones possède une grille fixe, ses quatre tris et un portefeuille persistant, et les six statistiques sont alignées verticalement sans défilement. Les Slimes ripostent ; le personnage reste non classé avant le futur éveil au QG ; la régénération hors combat, l'XP de maîtrise sans pénalité de niveau, la sauvegarde locale protégée et le mode hors ligne préchargé sont intégrés.
-- La première faille E est désormais une instance jouable de trois salles. Les portails apparaissent dynamiquement, expirent après 24 heures, libèrent leur boss dans le monde s'ils sont ignorés, apparaissent sur une carte avec journal et disparaissent définitivement lorsqu'ils sont fermés. Leur cycle et les Gardiens échappés survivent aux redémarrages locaux ; le monde en ligne attend encore sa base de données persistante.
+- État du 14 juillet 2026 : l'interface utilise un thème ardoise-jade ; la caméra paysage est dézoomée à 85 %, l'inventaire en trois zones possède une grille fixe, quatre tris et un portefeuille persistant, et les six statistiques sont alignées verticalement sans défilement. Le HUD est bord-à-bord avec protection des safe areas iPhone, tandis que l'XP et le butin apparaissent en haut de l'écran.
+- Le personnage reste Aventurier non classé jusqu'au niveau 10. Le Maître du QG ouvre alors le choix définitif Épéiste, Archer ou Magicien, attribue le rang E et 25 points à la voie choisie. La régénération hors combat commence deux secondes après le dernier coup donné ou reçu et affiche `+1` toutes les 500 ms sans agréger les retards.
+- Le Val d'Aube mesure désormais 112 × 72 cases, comprend six régions, quinze monstres extérieurs et des ressources croissantes. Les failles E, D, C, B, A et S sont toutes jouables en trois salles avec difficulté et récompenses propres ; leurs portails affichent leur puissance conseillée. Elles expirent après 24 heures, libèrent leur boss dans le monde si elles sont ignorées et disparaissent lorsqu'elles sont fermées. Leur cycle et les Gardiens échappés survivent aux redémarrages locaux ; le monde en ligne attend encore sa base de données persistante.
 - Les fondations validées sont le déplacement tactile sur cases, le combat automatique à portée, les six statistiques dont la Vitesse, l'Aventurier sans rang avant son éveil, les rangs liés à la puissance et au niveau minimum après l'éveil, les trois voies permanentes, l'interface mobile compacte en paysage, les failles dynamiques et l'intégration MMO progressive avec solution hors ligne locale.
 - Les valeurs d'équilibrage provisoires peuvent être modifiées après les essais sans changer ces fondations.
 - Chaque version stable doit être enregistrée sur GitHub et rendue testable sur Vercel afin que le projet reste accessible depuis mobile.

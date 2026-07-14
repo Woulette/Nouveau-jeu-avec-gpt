@@ -7,7 +7,9 @@ export interface GridPosition {
 
 export type Direction = "north" | "south" | "east" | "west";
 export type PlayerRank = "E" | "D" | "C" | "B" | "A" | "S" | "SS" | "SSS" | "OMEGA";
+export type PlayableRiftRank = Extract<PlayerRank, "E" | "D" | "C" | "B" | "A" | "S">;
 export type CombatPath = "adventurer" | "melee" | "ranged" | "magic";
+export type AwakenedCombatPath = Exclude<CombatPath, "adventurer">;
 export type MonsterBehaviour = "passive" | "defensive" | "aggressive";
 export type EquipmentSlot = "head" | "weapon" | "armor" | "legs" | "boots" | "ring";
 
@@ -94,7 +96,7 @@ export interface MonsterSnapshot {
 
 export interface RiftSnapshot {
   id: string;
-  rank: "E";
+  rank: PlayableRiftRank;
   position: GridPosition;
   spawnedAt: number;
   expiresAt: number;
@@ -106,7 +108,7 @@ export interface RiftSnapshot {
 export interface RiftRunSnapshot {
   instanceId: string;
   riftId: string;
-  rank: "E";
+  rank: PlayableRiftRank;
   startedAt: number;
   room: 1 | 2 | 3;
   totalRooms: 3;
@@ -169,27 +171,48 @@ export type GameEvent =
       effectAmount: number;
     }
   | {
+      type: "awakening-dialogue";
+      playerId: EntityId;
+      npcId: string;
+      status: "level-required" | "eligible" | "completed";
+      requiredLevel: number;
+      currentLevel: number;
+      className: string;
+      rank: PlayerRank | null;
+    }
+  | {
+      type: "awakening-complete";
+      playerId: EntityId;
+      npcId: string;
+      combatPath: AwakenedCombatPath;
+      className: string;
+      rank: "E";
+    }
+  | {
       type: "rift-room-cleared";
       playerId: EntityId;
       riftId: string;
+      rank: PlayableRiftRank;
       room: 1 | 2 | 3;
       nextRoom: 2 | 3 | null;
     }
   | {
       type: "rift-boss-escaped";
       riftId: string;
+      rank: PlayableRiftRank;
       bossId: EntityId;
     }
   | {
       type: "rift-outside-boss-defeated";
       riftId: string;
+      rank: PlayableRiftRank;
       playerId: EntityId;
     }
   | {
       type: "rift-complete";
       playerId: EntityId;
       riftId: string;
-      rank: "E";
+      rank: PlayableRiftRank;
       elapsedMs: number;
       generalXp: number;
       items: Array<{ itemId: string; quantity: number }>;
