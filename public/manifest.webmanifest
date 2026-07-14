@@ -1,0 +1,10 @@
+{
+  "name": "Nouveau MMO RPG — Prototype",
+  "short_name": "Nouveau MMO",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#11151c",
+  "theme_color": "#11151c",
+  "icons": []
+}
