@@ -64,16 +64,20 @@ interface EntityView {
 
 const EQUIPMENT_LABELS: Readonly<Record<EquipmentSlot, string>> = {
   head: "Coiffe",
-  weapon: "Arme",
+  weapon: "Corps-à-corps",
   armor: "Armure",
+  legs: "Pantalon",
   boots: "Bottes",
+  ring: "Anneau",
 };
 
 const EQUIPMENT_ICONS: Readonly<Record<EquipmentSlot, string>> = {
   head: "♕",
   weapon: "†",
   armor: "♜",
+  legs: "♙",
   boots: "⌁",
+  ring: "○",
 };
 
 const BONUS_LABELS: Readonly<Record<keyof ItemBonuses, string>> = {
@@ -141,7 +145,14 @@ export class WorldScene extends Phaser.Scene {
   private latestMonsters = new Map<string, MonsterSnapshot>();
   private attackingUntil = new Map<string, number>();
   private followedPlayerId: string | null = null;
-  private equipment: EquipmentSnapshot = { head: null, weapon: null, armor: null, boots: null };
+  private equipment: EquipmentSnapshot = {
+    head: null,
+    weapon: null,
+    armor: null,
+    legs: null,
+    boots: null,
+    ring: null,
+  };
   private inventorySignature = "";
   private rewards: HudReward[] = [];
   private rewardSequence = 0;
@@ -579,7 +590,10 @@ export class WorldScene extends Phaser.Scene {
     }
     const point = tileCenter(player.position);
     const positionChanged = this.moveView(view, point, immediate, 220);
-    view.label.setText(player.id === this.localPlayerId ? player.name : `${player.name} · ${player.rank}`);
+    const identity = player.rank
+      ? `${player.name} · rang ${player.rank === "OMEGA" ? "Ω" : player.rank}`
+      : `${player.name} · Aventurier`;
+    view.label.setText(player.id === this.localPlayerId ? player.name : identity);
     view.container.setVisible(player.alive).setAlpha(player.alive ? 1 : 0.3);
     this.drawHealth(view, player.hp, player.maxHp);
 
@@ -864,6 +878,16 @@ export class WorldScene extends Phaser.Scene {
         equipment: this.equipmentBonus("energy"),
         total: player.level + this.equipmentBonus("energy"),
       },
+      {
+        id: "speed",
+        label: "Vitesse",
+        icon: "➟",
+        description: "Base 100, puis +1 tous les 10 niveaux (maximum 300).",
+        base: 100,
+        training: Math.max(0, player.speed - 100),
+        equipment: 0,
+        total: player.speed,
+      },
     ];
     this.callbacks.onHud({
       hp: player.hp,
@@ -926,6 +950,7 @@ export class WorldScene extends Phaser.Scene {
       icon: "◆",
       description: "Un objet trouvé sur un monstre.",
       kind: "material",
+      category: "resource",
       rarity: "common",
     };
     const reward: HudReward = {
@@ -967,6 +992,7 @@ export class WorldScene extends Phaser.Scene {
       canEquip:
         definition.kind === "equipment" &&
         meetsItemRank(player.rank, definition.requiredRank),
+      category: definition.category,
       stats,
     };
   }

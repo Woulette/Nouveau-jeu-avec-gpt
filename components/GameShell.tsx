@@ -10,24 +10,26 @@ import Hud, {
   type HudStatBreakdown,
 } from "./Hud";
 
-export interface GameHudUpdate {
-  hp?: number;
-  maxHp?: number;
-  mp?: number;
-  maxMp?: number;
-  xp?: number;
-  maxXp?: number;
-  level?: number;
-  rank?: string;
-  power?: number;
-  connectionStatus?: HudConnectionStatus;
-  playerName?: string;
-  inventory?: HudInventoryItem[];
-  equipment?: HudEquipmentSlot[];
-  stats?: HudStatBreakdown[];
-  rewards?: HudReward[];
-  alive?: boolean;
+interface GameHudState {
+  hp: number;
+  maxHp: number;
+  mp: number;
+  maxMp: number;
+  xp: number;
+  maxXp: number;
+  level: number;
+  rank: string | null;
+  power: number;
+  connectionStatus: HudConnectionStatus;
+  playerName: string;
+  inventory: HudInventoryItem[];
+  equipment: HudEquipmentSlot[];
+  stats: HudStatBreakdown[];
+  rewards: HudReward[];
+  alive: boolean;
 }
+
+export type GameHudUpdate = Partial<GameHudState>;
 
 const initialInventory: HudInventoryItem[] = [
   {
@@ -38,6 +40,7 @@ const initialInventory: HudInventoryItem[] = [
     rarity: "common",
     description: "Une préparation simple qui restaure quelques points de vie.",
     equippable: false,
+    category: "consumable",
   },
   {
     id: "coiffe-aventurier",
@@ -46,9 +49,9 @@ const initialInventory: HudInventoryItem[] = [
     quantity: 1,
     rarity: "common",
     description: "Une coiffe légère remise aux nouveaux aventuriers du Val d’Aube.",
-    requiredRank: "E",
     equippable: true,
     canEquip: true,
+    category: "equipment",
     stats: [{ label: "Défense", value: "+1" }],
   },
   {
@@ -58,9 +61,9 @@ const initialInventory: HudInventoryItem[] = [
     quantity: 1,
     rarity: "common",
     description: "Une arme modeste, mais suffisante pour les premières chasses.",
-    requiredRank: "E",
     equippable: true,
     canEquip: true,
+    category: "equipment",
     stats: [{ label: "Corps-à-corps", value: "+1" }],
   },
   {
@@ -70,9 +73,21 @@ const initialInventory: HudInventoryItem[] = [
     quantity: 1,
     rarity: "common",
     description: "Une tunique renforcée distribuée aux nouveaux aventuriers.",
-    requiredRank: "E",
     equippable: true,
     canEquip: true,
+    category: "equipment",
+    stats: [{ label: "Défense", value: "+1" }],
+  },
+  {
+    id: "pantalon-aventurier",
+    name: "Pantalon d’aventurier",
+    icon: "♙",
+    quantity: 1,
+    rarity: "common",
+    description: "Un pantalon solide conçu pour les premiers voyages hors de la ville.",
+    equippable: true,
+    canEquip: true,
+    category: "equipment",
     stats: [{ label: "Défense", value: "+1" }],
   },
   {
@@ -82,18 +97,32 @@ const initialInventory: HudInventoryItem[] = [
     quantity: 1,
     rarity: "common",
     description: "Des bottes souples qui facilitent les longues expéditions.",
-    requiredRank: "E",
     equippable: true,
     canEquip: true,
+    category: "equipment",
+    stats: [{ label: "Énergie", value: "+1" }],
+  },
+  {
+    id: "anneau-cuivre",
+    name: "Anneau de cuivre",
+    icon: "○",
+    quantity: 1,
+    rarity: "common",
+    description: "Un anneau sans rang qui renforce légèrement l’énergie de son porteur.",
+    equippable: true,
+    canEquip: true,
+    category: "equipment",
     stats: [{ label: "Énergie", value: "+1" }],
   },
 ];
 
 const initialEquipment: HudEquipmentSlot[] = [
   { id: "head", label: "Coiffe", icon: "♕", item: null },
-  { id: "weapon", label: "Arme", icon: "†", item: null },
+  { id: "weapon", label: "Corps-à-corps", icon: "†", item: null },
   { id: "armor", label: "Armure", icon: "♜", item: null },
+  { id: "legs", label: "Pantalon", icon: "♙", item: null },
   { id: "boots", label: "Bottes", icon: "⌁", item: null },
+  { id: "ring", label: "Anneau", icon: "○", item: null },
 ];
 
 const initialStats: HudStatBreakdown[] = [
@@ -102,21 +131,22 @@ const initialStats: HudStatBreakdown[] = [
   { id: "magic", label: "Magie", icon: "✦", description: "Augmente la puissance des sorts magiques.", base: 1, training: 0, equipment: 0, total: 1, xp: 0, xpToNext: 50 },
   { id: "defense", label: "Défense", icon: "🛡", description: "Réduit les dégâts reçus au combat.", base: 1, training: 0, equipment: 0, total: 1, xp: 0, xpToNext: 50 },
   { id: "energy", label: "Énergie", icon: "⚡", description: "Renforce les réserves de vie et de mana.", base: 1, training: 0, equipment: 0, total: 1 },
+  { id: "speed", label: "Vitesse", icon: "➟", description: "Base 100, puis +1 tous les 10 niveaux (maximum 300).", base: 100, training: 0, equipment: 0, total: 100 },
 ];
 
 export default function GameShell() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(false);
-  const [hud, setHud] = useState({
-    hp: 117,
-    maxHp: 117,
+  const [hud, setHud] = useState<GameHudState>({
+    hp: 112,
+    maxHp: 112,
     mp: 35,
     maxMp: 35,
     xp: 0,
     maxXp: 80,
     level: 1,
-    rank: "E",
-    power: 75,
+    rank: null,
+    power: 70,
     connectionStatus: "connecting" as HudConnectionStatus,
     playerName: "Aventurier",
     inventory: initialInventory,
@@ -173,26 +203,6 @@ export default function GameShell() {
         onSkillActivate={(skillId) => dispatchToGame("ui:skill", { skillId })}
         onRespawn={() => dispatchToGame("ui:respawn", {})}
       />
-
-      <div
-        className="landscape-hint"
-        aria-hidden="true"
-        style={{
-          position: "fixed",
-          left: "50%",
-          bottom: "calc(max(72px, env(safe-area-inset-bottom) + 72px))",
-          zIndex: 40,
-          transform: "translateX(-50%)",
-          padding: "5px 10px",
-          borderRadius: 999,
-          color: "#d9ceb5",
-          background: "rgba(12,16,22,.72)",
-          fontSize: 10,
-          pointerEvents: "none",
-        }}
-      >
-        Tournez l’écran pour une vue plus large
-      </div>
     </main>
   );
 }

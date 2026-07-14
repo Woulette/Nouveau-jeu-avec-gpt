@@ -1,4 +1,4 @@
-export type EquipmentSlot = "weapon" | "armor" | "boots";
+export type EquipmentSlot = "head" | "weapon" | "armor" | "legs" | "boots" | "ring";
 
 export interface InventoryItem {
   id: string;
@@ -29,7 +29,7 @@ export interface HudState {
   xp: number;
   xpNeeded: number;
   level: number;
-  rank: string;
+  rank: string | null;
   powerScore: number;
   connection: "local" | "connecting" | "online" | "reconnecting";
   inventory: InventoryItem[];
@@ -39,15 +39,15 @@ export interface HudState {
 }
 
 export const initialHudState: HudState = {
-  hp: 105,
-  maxHp: 105,
-  mp: 42,
-  maxMp: 42,
+  hp: 112,
+  maxHp: 112,
+  mp: 35,
+  maxMp: 35,
   xp: 0,
   xpNeeded: 80,
   level: 1,
-  rank: "E",
-  powerScore: 18,
+  rank: null,
+  powerScore: 70,
   connection: "connecting",
   inventory: [
     {
@@ -65,6 +65,7 @@ export const initialHudState: HudState = {
     { label: "Magie", base: 1, trained: 0, equipment: 0, total: 1 },
     { label: "Défense", base: 1, trained: 0, equipment: 0, total: 1 },
     { label: "Énergie", base: 1, trained: 0, equipment: 0, total: 1 },
+    { label: "Vitesse", base: 100, trained: 0, equipment: 0, total: 100 },
   ],
 };
 

@@ -54,6 +54,15 @@ describe("rank formula acceptance", () => {
     expect(outgoingPlayerDamage(10, "D")).toBe(Math.floor(rawDamageBeforeRank * 1.1));
     expect(outgoingPlayerDamage(10, "OMEGA")).toBe(Math.floor(rawDamageBeforeRank * 2));
   });
+
+  it("does not assign rank effects before the headquarters awakening", () => {
+    const hpBeforeRank = 100 + 10 * 12;
+    const rawDamageBeforeRank = 5 + 10 * 1.8;
+
+    expect(playerMaxHp(10, null)).toBe(hpBeforeRank);
+    expect(outgoingPlayerDamage(10, null)).toBe(Math.floor(rawDamageBeforeRank));
+    expect(trainingXpForAction(10, null)).toBe(10);
+  });
 });
 
 describe("independent general and mastery progression", () => {

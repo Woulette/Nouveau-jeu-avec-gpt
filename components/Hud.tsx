@@ -6,7 +6,6 @@ import {
   type ReactNode,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 
@@ -42,6 +41,7 @@ export interface HudInventoryItem {
   equippable?: boolean;
   canEquip?: boolean;
   stats?: HudItemStat[];
+  category?: "equipment" | "resource" | "consumable";
 }
 
 export interface HudEquipmentSlot {
@@ -80,7 +80,7 @@ export interface HudProps {
   xp: number;
   maxXp: number;
   level: number;
-  rank: string;
+  rank: string | null;
   power: number;
   connectionStatus: HudConnectionStatus;
   playerName?: string;
@@ -103,16 +103,15 @@ export interface HudProps {
 type MeterTone = "health" | "mana" | "xp";
 
 const PANEL_LABELS: Record<Exclude<HudPanel, null>, string> = {
-  inventory: "Inventaire",
+  inventory: "Inventaire & équipement",
   equipment: "Équipement",
   stats: "Statistiques",
 };
 
-const PANEL_ICONS: Record<Exclude<HudPanel, null>, string> = {
-  inventory: "◇",
-  equipment: "♜",
-  stats: "✦",
-};
+const QUICK_PANELS: ReadonlyArray<{ id: "inventory" | "stats"; label: string; icon: string }> = [
+  { id: "inventory", label: "Inventaire", icon: "◇" },
+  { id: "stats", label: "Statistiques", icon: "✦" },
+];
 
 const CONNECTION_LABELS: Record<HudConnectionStatus, string> = {
   connected: "En ligne",
@@ -144,9 +143,11 @@ const RANK_BONUSES: Readonly<Record<string, number>> = {
 
 const EQUIPMENT_LAYOUT = [
   { id: "head", label: "Coiffe", icon: "♢", className: "equipmentSlotHead" },
-  { id: "weapon", label: "Arme", icon: "⚔", className: "equipmentSlotWeapon" },
+  { id: "weapon", label: "Corps-à-corps", icon: "⚔", className: "equipmentSlotWeapon" },
   { id: "armor", label: "Armure", icon: "♜", className: "equipmentSlotArmor" },
+  { id: "legs", label: "Pantalon", icon: "♧", className: "equipmentSlotLegs" },
   { id: "boots", label: "Bottes", icon: "⌁", className: "equipmentSlotBoots" },
+  { id: "ring", label: "Anneau", icon: "◉", className: "equipmentSlotRing" },
 ] as const;
 
 const STAT_PRESENTATION: Record<string, { icon: string; description: string }> = {
@@ -170,7 +171,24 @@ const STAT_PRESENTATION: Record<string, { icon: string; description: string }> =
     icon: "⚡",
     description: "Renforce les réserves de vie et de mana.",
   },
+  speed: {
+    icon: "➟",
+    description: "Accélère les déplacements sur la carte.",
+  },
+  vitesse: {
+    icon: "➟",
+    description: "Accélère les déplacements sur la carte.",
+  },
 };
+
+type InventoryFilter = "all" | "equipment" | "resource" | "consumable";
+
+const INVENTORY_FILTERS: ReadonlyArray<{ id: InventoryFilter; label: string }> = [
+  { id: "all", label: "Tout" },
+  { id: "equipment", label: "Équipement" },
+  { id: "resource", label: "Ressources" },
+  { id: "consumable", label: "Consommables" },
+];
 
 function clampRatio(value: number, maximum: number) {
   if (!Number.isFinite(value) || !Number.isFinite(maximum) || maximum <= 0) {
@@ -242,267 +260,255 @@ function Meter({
   );
 }
 
-function InventoryPanel({
-  items,
-  capacity,
-  onEquip,
-}: {
-  items: HudInventoryItem[];
-  capacity: number;
-  onEquip?: (itemId: string) => void;
-}) {
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-  const selectedItem = items.find((item) => item.id === selectedItemId) ?? null;
-  const visibleCapacity = Math.max(items.length, Math.min(Math.max(capacity, 8), 40));
-  const emptySlots = Math.max(0, visibleCapacity - items.length);
-
-  return (
-    <div className={styles.panelBody}>
-      <div className={styles.sectionHeading}>
-        <span>Sac d’aventurier</span>
-        <span className={styles.capacity}>
-          {items.length}/{capacity}
-        </span>
-      </div>
-
-      <div className={styles.inventoryGrid} aria-label="Objets dans l’inventaire">
-        {items.map((item) => {
-          const rarity = item.rarity ?? "common";
-          return (
-            <button
-              key={item.id}
-              type="button"
-              className={`${styles.itemSlot} ${styles[`rarity_${rarity}`]} ${
-                selectedItem?.id === item.id ? styles.itemSlotSelected : ""
-              }`}
-              aria-label={`${item.name}, ${RARITY_LABELS[rarity]}`}
-              aria-pressed={selectedItem?.id === item.id}
-              onClick={() => setSelectedItemId(item.id)}
-            >
-              <span className={styles.itemIcon} aria-hidden="true">
-                {item.icon ?? "◆"}
-              </span>
-              {(item.quantity ?? 1) > 1 ? (
-                <span className={styles.itemQuantity}>×{item.quantity}</span>
-              ) : null}
-              {item.equipped ? <span className={styles.equippedMark}>E</span> : null}
-            </button>
-          );
-        })}
-        {Array.from({ length: emptySlots }, (_, index) => (
-          <span className={`${styles.itemSlot} ${styles.emptyItemSlot}`} key={`empty-${index}`} />
-        ))}
-      </div>
-
-      {selectedItem ? (
-        <article className={styles.itemDetails} aria-live="polite">
-          <div className={styles.itemDetailsHeader}>
-            <span className={`${styles.detailIcon} ${styles[`rarity_${selectedItem.rarity ?? "common"}`]}`}>
-              {selectedItem.icon ?? "◆"}
-            </span>
-            <div>
-              <h3>{selectedItem.name}</h3>
-              <p className={styles.rarityLabel}>{RARITY_LABELS[selectedItem.rarity ?? "common"]}</p>
-            </div>
-          </div>
-          {selectedItem.description ? <p className={styles.itemDescription}>{selectedItem.description}</p> : null}
-          {selectedItem.stats?.length ? (
-            <dl className={styles.itemStats}>
-              {selectedItem.stats.map((stat) => (
-                <div key={stat.label}>
-                  <dt>{stat.label}</dt>
-                  <dd>{stat.value}</dd>
-                </div>
-              ))}
-            </dl>
-          ) : null}
-          {selectedItem.requiredRank ? (
-            <p className={styles.requirement}>Rang requis : {selectedItem.requiredRank}</p>
-          ) : null}
-          {selectedItem.equippable !== false ? (
-            <button
-              type="button"
-              className={styles.primaryAction}
-              disabled={selectedItem.canEquip === false || selectedItem.equipped}
-              onClick={() => onEquip?.(selectedItem.id)}
-            >
-              {selectedItem.equipped
-                ? "Déjà équipé"
-                : selectedItem.canEquip === false
-                  ? "Rang insuffisant"
-                  : "Équiper"}
-            </button>
-          ) : null}
-        </article>
-      ) : (
-        <p className={styles.panelHint}>Touchez un objet pour afficher ses détails.</p>
-      )}
-    </div>
-  );
+function getItemCategory(item: HudInventoryItem): Exclude<InventoryFilter, "all"> {
+  if (item.category) return item.category;
+  if (item.equippable !== false) return "equipment";
+  if (/potion|élixir|elixir|consommable|food|nourriture/i.test(`${item.id} ${item.name}`)) {
+    return "consumable";
+  }
+  return "resource";
 }
 
-function EquipmentPanel({
+function CombinedInventoryPanel({
   slots,
-  inventory,
+  items,
+  capacity,
   onEquip,
   onUnequip,
 }: {
   slots: HudEquipmentSlot[];
-  inventory: HudInventoryItem[];
+  items: HudInventoryItem[];
+  capacity: number;
   onEquip?: (itemId: string) => void;
   onUnequip?: (slotId: string) => void;
 }) {
-  const stageRef = useRef<HTMLDivElement>(null);
+  const [filter, setFilter] = useState<InventoryFilter>("all");
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const slotById = new Map(slots.map((slot) => [slot.id.toLowerCase(), slot]));
-  const placedSlotIds = new Set<string>();
   const layoutSlots = EQUIPMENT_LAYOUT.map((layout) => {
     const aliases =
       layout.id === "head"
         ? ["head", "helmet", "coiffe"]
         : layout.id === "armor"
           ? ["armor", "armour", "chest", "torso"]
-          : layout.id === "boots"
-            ? ["boots", "feet", "shoes"]
-            : ["weapon", "mainhand", "main-hand"];
+          : layout.id === "legs"
+            ? ["legs", "pants", "trousers", "pantalon"]
+            : layout.id === "boots"
+              ? ["boots", "feet", "shoes"]
+              : layout.id === "ring"
+                ? ["ring", "anneau", "jewel"]
+                : ["weapon", "mainhand", "main-hand", "melee"];
     const slot = aliases.map((alias) => slotById.get(alias)).find(Boolean);
-    if (slot) {
-      placedSlotIds.add(slot.id);
-    }
     return {
       ...layout,
       slot: slot ?? { id: layout.id, label: layout.label, icon: layout.icon, item: null },
     };
   });
-  const extraSlots = slots.filter((slot) => !placedSlotIds.has(slot.id));
-  const equippableItems = inventory.filter((item) => item.equippable !== false);
+  const allKnownItems = [...items, ...slots.flatMap((slot) => (slot.item ? [slot.item] : []))];
+  const selectedItem = allKnownItems.find((item) => item.id === selectedItemId) ?? null;
+  const equippedSlot = selectedItem
+    ? slots.find((slot) => slot.item?.id === selectedItem.id) ?? null
+    : null;
+  const filteredItems = items.filter((item) => filter === "all" || getItemCategory(item) === filter);
+  const visibleCapacity = Math.max(filteredItems.length, Math.min(Math.max(capacity, 15), 30));
+  const emptySlots = Math.max(0, visibleCapacity - filteredItems.length);
 
   return (
-    <div className={styles.equipmentPanelBody}>
-      <div
-        className={styles.equipmentStage}
-        aria-label="Équipement porté par le personnage"
-        ref={stageRef}
-      >
-        <div className={styles.mannequin} aria-hidden="true">
-          <span className={styles.mannequinHead} />
-          <span className={styles.mannequinBody} />
-          <span className={styles.mannequinArmLeft} />
-          <span className={styles.mannequinArmRight} />
-          <span className={styles.mannequinLegLeft} />
-          <span className={styles.mannequinLegRight} />
-          <span className={styles.mannequinAura} />
-          {layoutSlots.map(({ id, slot }) =>
-            slot.item ? (
-              <span
-                className={`${styles.mannequinEquipped} ${styles[`mannequinEquipped_${id}`]}`}
-                key={`worn-${id}`}
+    <div className={styles.inventoryEquipmentLayout}>
+      <section className={styles.equipmentColumn} aria-labelledby="equipment-title">
+        <div className={styles.compactSectionHeading}>
+          <span id="equipment-title">Équipement porté</span>
+          <small>Toucher un objet pour le consulter</small>
+        </div>
+        <div className={styles.combinedEquipmentStage} aria-label="Équipement porté par le personnage">
+          <div className={styles.mannequin} aria-hidden="true">
+            <span className={styles.mannequinHead} />
+            <span className={styles.mannequinBody} />
+            <span className={styles.mannequinArmLeft} />
+            <span className={styles.mannequinArmRight} />
+            <span className={styles.mannequinLegLeft} />
+            <span className={styles.mannequinLegRight} />
+            <span className={styles.mannequinAura} />
+            {layoutSlots.map(({ id, icon, slot }) =>
+              slot.item ? (
+                <span
+                  className={`${styles.mannequinEquipped} ${styles[`mannequinEquipped_${id}`]}`}
+                  key={`worn-${id}`}
+                >
+                  {slot.item.icon ?? slot.icon ?? icon}
+                </span>
+              ) : null,
+            )}
+          </div>
+
+          {layoutSlots.map(({ className, icon, slot }) => {
+            const item = slot.item;
+            return (
+              <button
+                type="button"
+                className={`${styles.equipmentSlotCard} ${styles[className]}`}
+                key={slot.id}
+                disabled={!item}
+                onClick={() => item && setSelectedItemId(item.id)}
+                aria-label={item ? `${slot.label} : ${item.name}. Toucher pour voir le détail.` : `${slot.label} vide`}
               >
-                {slot.item.icon ?? slot.icon ?? "◆"}
-              </span>
-            ) : null,
-          )}
+                <span className={styles.equipmentSlotLabel}>{slot.label}</span>
+                <span className={styles.equipmentSlotIcon} aria-hidden="true">{item?.icon ?? slot.icon ?? icon}</span>
+                <strong>{item?.name ?? "Vide"}</strong>
+                <small>{item ? "Équipé" : "Emplacement libre"}</small>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className={styles.inventoryColumn} aria-labelledby="inventory-title">
+        <div className={styles.inventoryTitleRow}>
+          <div>
+            <strong id="inventory-title">Sac d’aventurier</strong>
+            <small>Objets, ressources et consommables</small>
+          </div>
+          <span className={styles.capacity}>{items.length}/{capacity}</span>
         </div>
 
-        {layoutSlots.map(({ className, slot }) => {
-          const item = slot.item;
-          return (
+        <div className={styles.inventoryFilters} aria-label="Filtrer l’inventaire">
+          {INVENTORY_FILTERS.map((entry) => (
             <button
               type="button"
-              className={`${styles.equipmentSlotCard} ${styles[className]}`}
-              key={slot.id}
-              disabled={!item}
-              onClick={() => item && onUnequip?.(slot.id)}
-              aria-label={item ? `${slot.label} : ${item.name}. Toucher pour retirer.` : `${slot.label} vide`}
+              key={entry.id}
+              className={filter === entry.id ? styles.activeFilter : ""}
+              aria-pressed={filter === entry.id}
+              onClick={() => setFilter(entry.id)}
             >
-              <span className={styles.equipmentSlotLabel}>{slot.label}</span>
-              <span className={styles.equipmentSlotIcon} aria-hidden="true">
-                {item?.icon ?? slot.icon ?? "◇"}
-              </span>
-              <strong>{item?.name ?? "Vide"}</strong>
-              {item ? <small>Toucher pour retirer</small> : <small>Emplacement libre</small>}
-            </button>
-          );
-        })}
-      </div>
-
-      {extraSlots.length ? (
-        <div className={styles.extraEquipmentSlots}>
-          {extraSlots.map((slot) => (
-            <button
-              type="button"
-              className={styles.extraEquipmentSlot}
-              key={slot.id}
-              disabled={!slot.item}
-              onClick={() => slot.item && onUnequip?.(slot.id)}
-            >
-              <span aria-hidden="true">{slot.item?.icon ?? slot.icon ?? "◇"}</span>
-              <span>{slot.label}</span>
-              <strong>{slot.item?.name ?? "Vide"}</strong>
+              {entry.label}
             </button>
           ))}
         </div>
-      ) : null}
 
-      <section className={styles.equipmentInventory} aria-labelledby="equippable-items-title">
-        <div className={styles.sectionHeading}>
-          <span id="equippable-items-title">Objets équipables</span>
-          <span className={styles.capacity}>{equippableItems.length}</span>
-        </div>
-        {equippableItems.length ? (
-          <div className={styles.equipmentInventoryGrid}>
-            {equippableItems.map((item) => (
-              <button
-                type="button"
-                key={item.id}
-                className={`${styles.equipmentInventoryItem} ${styles[`rarity_${item.rarity ?? "common"}`]}`}
-                disabled={item.equipped || item.canEquip === false}
-                onClick={() => {
-                  onEquip?.(item.id);
-                  stageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-                }}
-                aria-label={
-                  item.equipped
-                    ? `${item.name}, déjà équipé`
-                    : item.canEquip === false
-                      ? `${item.name}, rang insuffisant`
-                      : `Équiper ${item.name}`
-                }
-              >
-                <span aria-hidden="true">{item.icon ?? "◆"}</span>
-                <span className={styles.equipmentInventoryCopy}>
-                  <strong>{item.name}</strong>
-                  <small>
-                    {item.equipped ? "Équipé" : item.canEquip === false ? "Rang insuffisant" : "Toucher pour équiper"}
-                  </small>
-                </span>
-              </button>
+        <div className={styles.inventoryGridViewport}>
+          <div className={styles.inventoryGrid} aria-label="Objets dans l’inventaire">
+            {filteredItems.map((item) => {
+              const rarity = item.rarity ?? "common";
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`${styles.itemSlot} ${styles[`rarity_${rarity}`]} ${
+                    selectedItem?.id === item.id ? styles.itemSlotSelected : ""
+                  }`}
+                  aria-label={`${item.name}, ${RARITY_LABELS[rarity]}`}
+                  aria-pressed={selectedItem?.id === item.id}
+                  onClick={() => setSelectedItemId(item.id)}
+                >
+                  <span className={styles.itemIcon} aria-hidden="true">{item.icon ?? "◆"}</span>
+                  {(item.quantity ?? 1) > 1 ? <span className={styles.itemQuantity}>×{item.quantity}</span> : null}
+                  {item.equipped ? <span className={styles.equippedMark}>E</span> : null}
+                </button>
+              );
+            })}
+            {Array.from({ length: emptySlots }, (_, index) => (
+              <span className={`${styles.itemSlot} ${styles.emptyItemSlot}`} key={`empty-${index}`} />
             ))}
           </div>
-        ) : (
-          <p className={styles.panelHint}>Aucun équipement dans le sac pour le moment.</p>
-        )}
+          {!filteredItems.length ? <p className={styles.emptyFilter}>Aucun objet dans cette catégorie.</p> : null}
+        </div>
       </section>
+
+      {selectedItem ? (
+        <article className={styles.itemDetails} aria-live="polite" aria-label={`Détails de ${selectedItem.name}`}>
+          <button
+            type="button"
+            className={styles.detailClose}
+            onClick={() => setSelectedItemId(null)}
+            aria-label="Fermer les détails de l’objet"
+          >×</button>
+          <div className={styles.itemDetailsHeader}>
+            <span className={`${styles.detailIcon} ${styles[`rarity_${selectedItem.rarity ?? "common"}`]}`}>
+              {selectedItem.icon ?? "◆"}
+            </span>
+            <div>
+              <h3>{selectedItem.name}</h3>
+              <p className={styles.rarityLabel}>
+                {RARITY_LABELS[selectedItem.rarity ?? "common"]} · {
+                  INVENTORY_FILTERS.find((entry) => entry.id === getItemCategory(selectedItem))?.label
+                } · ×{selectedItem.quantity ?? 1}
+              </p>
+            </div>
+          </div>
+          <p className={styles.itemDescription}>
+            {selectedItem.description ?? "Aucune description disponible pour cet objet."}
+          </p>
+          {selectedItem.stats?.length ? (
+            <dl className={styles.itemStats}>
+              {selectedItem.stats.map((stat) => (
+                <div key={stat.label}><dt>{stat.label}</dt><dd>{stat.value}</dd></div>
+              ))}
+            </dl>
+          ) : <p className={styles.noBonus}>Aucun bonus de statistique.</p>}
+          {selectedItem.requiredRank ? <p className={styles.requirement}>Rang requis : {selectedItem.requiredRank}</p> : null}
+          {selectedItem.equippable !== false ? (
+            <button
+              type="button"
+              className={styles.primaryAction}
+              disabled={!equippedSlot && selectedItem.canEquip === false}
+              onClick={() => {
+                if (equippedSlot) onUnequip?.(equippedSlot.id);
+                else onEquip?.(selectedItem.id);
+              }}
+            >
+              {equippedSlot
+                ? "Retirer l’équipement"
+                : selectedItem.canEquip === false
+                  ? "Conditions non remplies"
+                  : "Équiper cet objet"}
+            </button>
+          ) : null}
+        </article>
+      ) : null}
     </div>
   );
 }
 
-function StatsPanel({ stats, rank }: { stats: HudStatBreakdown[]; rank: string }) {
-  if (!stats.length) {
-    return <p className={styles.emptyState}>Les statistiques seront disponibles prochainement.</p>;
-  }
+function StatsPanel({ stats, rank, level }: { stats: HudStatBreakdown[]; rank: string | null; level: number }) {
+  const speedFromLevel = Math.min(300, 100 + Math.floor(Math.max(0, level) / 10));
+  const hasSpeed = stats.some((stat) => ["speed", "vitesse"].includes(stat.id.toLowerCase()));
+  const normalizedStats = (
+    hasSpeed
+      ? stats
+      : [
+          ...stats,
+          {
+            id: "speed",
+            label: "Vitesse",
+            description: "Augmente de 1 tous les 10 niveaux. Maximum : 300.",
+            base: 100,
+            training: speedFromLevel - 100,
+            equipment: 0,
+            total: speedFromLevel,
+          },
+        ]
+  ).slice(0, 6);
 
   return (
     <div className={styles.statsList}>
-      <aside className={styles.rankBonus} aria-label={`Bonus du rang ${rank}`}>
-        <span>
-          <small>Bonus permanent du rang {rank}</small>
-          Dégâts · PV · Défense
-        </span>
-        <strong>+{RANK_BONUSES[rank.toUpperCase()] ?? 0}%</strong>
+      <aside className={styles.rankBonus} aria-label={rank ? `Bonus du rang ${rank}` : "Aucun rang attribué"}>
+        {rank ? (
+          <>
+            <span><small>Bonus permanent du rang {rank}</small>Dégâts · PV · Défense</span>
+            <strong>+{RANK_BONUSES[rank.toUpperCase()] ?? 0}%</strong>
+          </>
+        ) : (
+          <>
+            <span><small>Statut actuel</small>Aventurier · Aucun rang attribué</span>
+            <em>QG au niveau 10</em>
+          </>
+        )}
       </aside>
-      {stats.map((stat) => {
+      {normalizedStats.map((stat) => {
         const hasTraining = typeof stat.xp === "number" && typeof stat.xpToNext === "number";
-        const presentation = STAT_PRESENTATION[stat.id.toLowerCase()];
+        const statId = stat.id.toLowerCase();
+        const isSpeed = ["speed", "vitesse"].includes(statId);
+        const presentation = STAT_PRESENTATION[statId];
         return (
           <article className={styles.statCard} key={stat.id}>
             <div className={styles.statTopline}>
@@ -520,13 +526,19 @@ function StatsPanel({ stats, rank }: { stats: HudStatBreakdown[]; rank: string }
             </div>
             <div className={styles.statBreakdown}>
               <span><small>Base</small>{formatCompact(stat.base)}</span>
-              <span><small>Combat</small>+{formatCompact(stat.training ?? 0)}</span>
-              <span><small>Équipement</small>+{formatCompact(stat.equipment ?? 0)}</span>
+              <span>
+                <small>{isSpeed ? "Niveaux" : "Combat"}</small>
+                +{formatCompact(stat.training ?? 0)}
+              </span>
+              <span>
+                <small>{isSpeed ? "Maximum" : "Équipement"}</small>
+                {isSpeed ? "300" : `+${formatCompact(stat.equipment ?? 0)}`}
+              </span>
             </div>
-            {hasTraining ? (
+            {hasTraining && !isSpeed ? (
               <div className={styles.trainingRow} aria-label={`Progression de ${stat.label}`}>
                 <div className={styles.trainingLabel}>
-                  <span>Progression au combat</span>
+                  <span>XP de combat</span>
                   <small>
                     {formatCompact(stat.xp ?? 0)} / {formatCompact(stat.xpToNext ?? 0)} XP
                   </small>
@@ -536,7 +548,9 @@ function StatsPanel({ stats, rank }: { stats: HudStatBreakdown[]; rank: string }
                 </div>
               </div>
             ) : (
-              <small className={styles.levelOnly}>Progression par niveau général</small>
+              <small className={styles.levelOnly}>
+                {isSpeed ? "+1 tous les 10 niveaux" : "Progression par niveau général"}
+              </small>
             )}
           </article>
         );
@@ -575,6 +589,7 @@ export default function Hud({
   const [internalPanel, setInternalPanel] = useState<HudPanel>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const panel = activePanel === undefined ? internalPanel : activePanel;
+  const displayedPanel = panel === "equipment" ? "inventory" : panel;
 
   const visibleSkillSlots = useMemo(
     () =>
@@ -632,9 +647,7 @@ export default function Hud({
           </span>
           <div className={styles.identityCopy}>
             <strong>{playerName}</strong>
-            <span>
-              Niveau {level} · Rang {rank}
-            </span>
+            <span>{rank ? `Niveau ${level} · Rang ${rank}` : `Niveau ${level} · Non classé`}</span>
           </div>
           <span
             className={`${styles.connection} ${styles[`connection_${connectionStatus}`]}`}
@@ -705,10 +718,10 @@ export default function Hud({
       <HudSurface className={styles.menuDock}>
         {menuOpen ? (
           <nav className={styles.quickMenu} aria-label="Menu du personnage">
-            {(Object.keys(PANEL_LABELS) as Array<Exclude<HudPanel, null>>).map((panelId) => (
-              <button type="button" key={panelId} onClick={() => selectPanel(panelId)}>
-                <span aria-hidden="true">{PANEL_ICONS[panelId]}</span>
-                {PANEL_LABELS[panelId]}
+            {QUICK_PANELS.map((entry) => (
+              <button type="button" key={entry.id} onClick={() => selectPanel(entry.id)}>
+                <span aria-hidden="true">{entry.icon}</span>
+                {entry.label}
               </button>
             ))}
           </nav>
@@ -728,43 +741,39 @@ export default function Hud({
       </HudSurface>
 
       {panel ? (
-        <HudSurface className={styles.panel}>
+        <HudSurface
+          className={`${styles.panel} ${displayedPanel === "stats" ? styles.statsPanel : styles.inventoryPanel}`}
+        >
           <header className={styles.panelHeader}>
             <div>
               <span className={styles.panelEyebrow}>Personnage</span>
-              <h2>{PANEL_LABELS[panel]}</h2>
+              <h2>{displayedPanel ? PANEL_LABELS[displayedPanel] : "Personnage"}</h2>
             </div>
             <button type="button" className={styles.closeButton} onClick={closePanel} aria-label="Fermer le panneau">
               ×
             </button>
           </header>
 
-          <nav className={styles.panelTabs} aria-label="Sections du personnage">
-            {(Object.keys(PANEL_LABELS) as Array<Exclude<HudPanel, null>>).map((panelId) => (
-              <button
-                type="button"
-                key={panelId}
-                className={panel === panelId ? styles.activeTab : ""}
-                aria-current={panel === panelId ? "page" : undefined}
-                onClick={() => selectPanel(panelId)}
-              >
-                <span aria-hidden="true">{PANEL_ICONS[panelId]}</span>
-                <small>{PANEL_LABELS[panelId]}</small>
-              </button>
-            ))}
-          </nav>
-
-          <div className={styles.panelScroller} key={panel}>
-            {panel === "inventory" ? (
-              <InventoryPanel items={inventory} capacity={inventoryCapacity} onEquip={onEquip} />
+          <div className={styles.panelScroller} key={displayedPanel}>
+            {displayedPanel === "inventory" ? (
+              <CombinedInventoryPanel
+                slots={equipment}
+                items={inventory}
+                capacity={inventoryCapacity}
+                onEquip={onEquip}
+                onUnequip={onUnequip}
+              />
             ) : null}
-            {panel === "equipment" ? (
-              <EquipmentPanel slots={equipment} inventory={inventory} onEquip={onEquip} onUnequip={onUnequip} />
-            ) : null}
-            {panel === "stats" ? <StatsPanel stats={stats} rank={rank} /> : null}
+            {displayedPanel === "stats" ? <StatsPanel stats={stats} rank={rank} level={level} /> : null}
           </div>
         </HudSurface>
       ) : null}
+
+      <div className={styles.orientationGate} role="status" aria-live="polite">
+        <span className={styles.rotatePhone} aria-hidden="true">▯</span>
+        <strong>Tournez votre téléphone</strong>
+        <p>Le jeu se joue maintenant en mode paysage.</p>
+      </div>
 
       {!alive ? (
         <HudSurface className={styles.deathOverlay}>

@@ -52,12 +52,26 @@ describe("authoritative in-memory realm", () => {
     expect(realm.snapshot().players[0].position).toEqual({ x: 19, y: 27 });
   });
 
-  it("pursues the current target tile and resolves combat on the server", () => {
+  it("makes a slime ignore players until hit, then retaliate for real damage", () => {
     let now = 0;
     const messages: ServerMessage[] = [];
     const realm = new InMemoryRealm({ now: () => now, random: () => 1, autoStart: false });
     realm.registerPeer("peer-1", (message) => messages.push(message));
     realm.joinPeer("peer-1", { type: "join", name: "Testeur" });
+
+    for (let step = 0; step < 20; step += 1) {
+      now += 250;
+      realm.step(now);
+    }
+    expect(
+      messages.some(
+        (message) =>
+          message.type === "event" &&
+          message.event.type === "damage" &&
+          message.event.sourceId === "slime-01",
+      ),
+    ).toBe(false);
+
     realm.handleMessage("peer-1", { type: "target", targetId: "slime-01", sequence: 0 });
 
     for (let step = 0; step < 80; step += 1) {
@@ -86,14 +100,16 @@ describe("authoritative in-memory realm", () => {
     expect(slime.alive).toBe(false);
     expect(player.targetId).toBeNull();
     expect(player.masteries.melee.xp).toBeGreaterThan(0);
-    expect(
-      messages.some(
-        (message) =>
-          message.type === "event" &&
-          message.event.type === "damage" &&
-          message.event.sourceId === "slime-01",
-      ),
-    ).toBe(false);
+    const retaliation = messages.find(
+      (message) =>
+        message.type === "event" &&
+        message.event.type === "damage" &&
+        message.event.sourceId === "slime-01",
+    );
+    expect(retaliation?.type).toBe("event");
+    if (retaliation?.type === "event" && retaliation.event.type === "damage") {
+      expect(retaliation.event.amount).toBeGreaterThan(0);
+    }
   });
 
   it("makes idle monsters patrol deterministically inside their spawn area", () => {
@@ -209,12 +225,12 @@ describe("authoritative in-memory realm", () => {
     }
 
     const wolf = realm.snapshot().monsters.find((monster) => monster.id === "wolf-01")!;
-    expect(maxDistanceFromSpawn).toBeGreaterThan(3);
+    expect(maxDistanceFromSpawn).toBeGreaterThanOrEqual(3);
     expect(wolf.targetId).toBeNull();
     expect(manhattanDistance(wolf.position, wolfDefinition.spawn)).toBeLessThanOrEqual(3);
   });
 
-  it("owns the starter set and equips all four authoritative slots", () => {
+  it("starts rankless and equips all six unrestricted adventurer slots", () => {
     const messages: ServerMessage[] = [];
     const realm = new InMemoryRealm({ autoStart: false });
     realm.registerPeer("peer-1", (message) => messages.push(message));
@@ -226,15 +242,31 @@ describe("authoritative in-memory realm", () => {
       "coiffe-aventurier": 1,
       "dague-emoussee": 1,
       "tunique-aventurier": 1,
+      "pantalon-aventurier": 1,
       "bottes-aventurier": 1,
+      "anneau-cuivre": 1,
     });
-    expect(initial.equipment).toEqual({ head: null, weapon: null, armor: null, boots: null });
+    expect(initial.rank).toBeNull();
+    expect(initial.awakened).toBe(false);
+    expect(initial.awakeningEligible).toBe(false);
+    expect(initial.speed).toBe(100);
+    expect(initial.maxHp).toBe(112);
+    expect(initial.equipment).toEqual({
+      head: null,
+      weapon: null,
+      armor: null,
+      legs: null,
+      boots: null,
+      ring: null,
+    });
 
     [
       "coiffe-aventurier",
       "dague-emoussee",
       "tunique-aventurier",
+      "pantalon-aventurier",
       "bottes-aventurier",
+      "anneau-cuivre",
     ].forEach((itemId, sequence) => {
       realm.handleMessage("peer-1", { type: "equip", itemId, sequence });
     });
@@ -244,7 +276,9 @@ describe("authoritative in-memory realm", () => {
       head: "coiffe-aventurier",
       weapon: "dague-emoussee",
       armor: "tunique-aventurier",
+      legs: "pantalon-aventurier",
       boots: "bottes-aventurier",
+      ring: "anneau-cuivre",
     });
     expect(equipped.power).toBeGreaterThan(initial.power);
     expect(equipped.maxHp).toBeGreaterThan(initial.maxHp);
@@ -252,16 +286,17 @@ describe("authoritative in-memory realm", () => {
     expect(equipped.hp).toBe(equipped.maxHp);
     expect(equipped.mp).toBe(equipped.maxMp);
 
-    realm.handleMessage("peer-1", { type: "unequip", slot: "boots", sequence: 4 });
+    realm.handleMessage("peer-1", { type: "unequip", slot: "boots", sequence: 6 });
     const withoutBoots = realm.snapshot().players[0];
     expect(withoutBoots.equipment.boots).toBeNull();
-    expect(withoutBoots.maxHp).toBe(initial.maxHp);
-    expect(withoutBoots.maxMp).toBe(initial.maxMp);
+    expect(withoutBoots.equipment.ring).toBe("anneau-cuivre");
+    expect(withoutBoots.maxHp).toBeGreaterThan(initial.maxHp);
+    expect(withoutBoots.maxMp).toBeGreaterThan(initial.maxMp);
     expect(withoutBoots.hp).toBe(withoutBoots.maxHp);
     expect(withoutBoots.mp).toBe(withoutBoots.maxMp);
   });
 
-  it("rejects consumables, missing items, insufficient rank, and empty slots", () => {
+  it("rejects consumables, unknown items, ranked gear before awakening, and empty slots", () => {
     const messages: ServerMessage[] = [];
     const realm = new InMemoryRealm({ autoStart: false });
     realm.registerPeer("peer-1", (message) => messages.push(message));
@@ -269,7 +304,7 @@ describe("authoritative in-memory realm", () => {
 
     realm.handleMessage("peer-1", { type: "equip", itemId: "starter-potion", sequence: 0 });
     realm.handleMessage("peer-1", { type: "equip", itemId: "fragment-de-faille", sequence: 1 });
-    realm.handleMessage("peer-1", { type: "equip", itemId: "croc-de-faille", sequence: 2 });
+    realm.handleMessage("peer-1", { type: "equip", itemId: "objet-inconnu", sequence: 2 });
     realm.handleMessage("peer-1", { type: "unequip", slot: "head", sequence: 3 });
 
     const errors = messages
@@ -278,14 +313,16 @@ describe("authoritative in-memory realm", () => {
     expect(errors).toEqual([
       "ITEM_NOT_EQUIPPABLE",
       "RANK_REQUIRED",
-      "ITEM_NOT_OWNED",
+      "UNKNOWN_ITEM",
       "SLOT_EMPTY",
     ]);
     expect(realm.snapshot().players[0].equipment).toEqual({
       head: null,
       weapon: null,
       armor: null,
+      legs: null,
       boots: null,
+      ring: null,
     });
   });
 

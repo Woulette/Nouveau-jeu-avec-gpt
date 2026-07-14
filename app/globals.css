@@ -96,15 +96,3 @@ button {
   color: var(--muted);
   font-size: 13px;
 }
-
-@media (orientation: portrait) {
-  .landscape-hint {
-    display: block;
-  }
-}
-
-@media (orientation: landscape) {
-  .landscape-hint {
-    display: none;
-  }
-}

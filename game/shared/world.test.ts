@@ -17,9 +17,13 @@ describe("shared starter world", () => {
     expect(isWalkable(STARTER_MAP, portal.position)).toBe(true);
   });
 
-  it("contains all three initial behaviour families", () => {
+  it("makes slimes defensive while keeping true aggressive monsters distinct", () => {
+    const slimes = STARTER_MONSTERS.filter((monster) => monster.species === "slime");
+    expect(slimes).toHaveLength(2);
+    expect(slimes.every((monster) => monster.behaviour === "defensive")).toBe(true);
+    expect(slimes.every((monster) => monster.attackDamage > 0)).toBe(true);
     expect(new Set(STARTER_MONSTERS.map((monster) => monster.behaviour))).toEqual(
-      new Set(["passive", "defensive", "aggressive"]),
+      new Set(["defensive", "aggressive"]),
     );
   });
 });

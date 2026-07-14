@@ -4,7 +4,7 @@
 
 ## 1. Vision actuelle
 
-Le projet est un MMORPG 2D en temps réel principalement pensé pour mobile. Le niveau général est conçu comme une progression ouverte, sans plafond final fixe : les niveaux deviennent progressivement plus longs à obtenir, même après le dernier rang. Le jeu combine :
+Le projet est un MMORPG 2D en temps réel principalement pensé pour mobile et joué obligatoirement en **orientation paysage**. Le niveau général est conçu comme une progression ouverte, sans plafond final fixe : les niveaux deviennent progressivement plus longs à obtenir, même après le dernier rang. Le jeu combine :
 
 - un monde ouvert partagé, découpé sur une grille, et des commandes tactiles simples ;
 - trois voies de combat permanentes possédant leurs propres évolutions de classe ;
@@ -22,10 +22,11 @@ L'univers, les personnages, les noms, les graphismes et les mécaniques finales 
 - personnages, monstres, bâtiments et effets originaux, sans reprendre directement ceux d'une œuvre ou d'un jeu existant ;
 - silhouettes, couleurs de danger et zones d'interaction suffisamment claires sur un petit écran ;
 - priorité à la fluidité et à la lisibilité plutôt qu'à une accumulation d'effets visuels.
+- composition de l'interface conçue uniquement pour le format paysage ; en portrait, le jeu demande de tourner l'appareil au lieu de déformer ou de réorganiser l'écran de jeu.
 
 ## 2. Progression générale du joueur
 
-Le personnage possède un niveau général et cinq statistiques universelles. Il n'attribue plus manuellement des points à chaque niveau : les statistiques progressent automatiquement et, pour certaines, grâce à leur propre entraînement au combat.
+Le personnage possède un niveau général et six statistiques universelles. Il n'attribue plus manuellement des points à chaque niveau : les statistiques progressent automatiquement et, pour certaines, grâce à leur propre entraînement au combat.
 
 | Statistique | Fonction actuelle |
 | --- | --- |
@@ -34,6 +35,7 @@ Le personnage possède un niveau général et cinq statistiques universelles. Il
 | Magie | Augmente les dégâts des sorts |
 | Défense | Réduit les dégâts reçus |
 | Énergie | Augmente les points de vie et les points de mana |
+| Vitesse | Détermine la vitesse de déplacement du personnage |
 
 ### Valeurs de départ et progression générale
 
@@ -43,7 +45,8 @@ Le personnage commence Aventurier niveau général 1 avec :
 - 1 en Distance ;
 - 1 en Magie ;
 - 1 en Défense ;
-- 1 en Énergie.
+- 1 en Énergie ;
+- 100 en Vitesse.
 
 À chaque niveau général gagné, il reçoit automatiquement :
 
@@ -52,6 +55,14 @@ Le personnage commence Aventurier niveau général 1 avec :
 - +1 en Magie de base ;
 - +1 en Défense de base ;
 - +1 en Énergie de base.
+
+La Vitesse suit une règle séparée : elle commence à **100**, gagne **+1 tous les 10 niveaux généraux** et ne peut jamais dépasser **300**. Sa valeur issue du niveau est donc :
+
+**Vitesse = min(300, 100 + partie entière du niveau général / 10)**
+
+Exemples : niveau 1 = 100, niveau 10 = 101, niveau 100 = 110 et niveau 2 000 = 300. Dans la décision actuelle, la Vitesse ne possède pas d'XP d'entraînement au combat.
+
+La Vitesse agit réellement sur le déplacement autoritaire. La cadence de départ reste de 200 ms par case à 100 en Vitesse, puis suit la formule **intervalle par case = 20 000 / Vitesse**. À 300, le délai théorique est donc d'environ 66,7 ms par case. Le serveur conserve les fractions de temps entre ses ticks afin que même un passage de 100 à 101 produise progressivement un gain réel au lieu d'être annulé par l'arrondi.
 
 L'Énergie de base, et donc la progression principale des PV et des PM, augmente uniquement grâce au niveau général. Elle ne possède pas d'expérience d'entraînement au combat dans le système actuel. Les équipements peuvent toutefois lui ajouter un bonus séparé tant qu'ils sont portés.
 
@@ -97,13 +108,15 @@ Les conditions exactes restent à équilibrer, mais l'entraînement devra seulem
 
 ### Rangs officiels et indice de puissance
 
-Les rangs appartiennent au joueur et représentent sa puissance globale. Ils ne sont pas accordés automatiquement par le niveau général.
+Les rangs appartiennent au joueur et représentent sa puissance globale. **L'Aventurier commence sans aucun rang** : l'interface ne doit donc afficher ni « rang E » ni bonus de rang avant son éveil officiel.
+
+Le niveau général 10 débloque seulement le droit de se présenter au QG de la ville. Atteindre ce niveau ne donne automatiquement ni classe ni rang. Le joueur doit parler au PNJ du QG, accomplir son éveil et confirmer définitivement sa voie Corps-à-corps, Distance ou Magie. Il devient alors Épéiste, Archer ou Magicien et reçoit son premier rang officiel, **E**.
 
 Ordre actuel :
 
 **E → D → C → B → A → S → SS → SSS → Ω Oméga**
 
-Chaque promotion possède deux conditions distinctes :
+Après cet éveil initial, chaque promotion vers D puis les rangs supérieurs possède deux conditions distinctes :
 
 1. un niveau général minimum, qui débloque la possibilité d'obtenir le rang ;
 2. un indice de puissance minimum, qui prouve que le personnage est réellement assez puissant.
@@ -121,7 +134,7 @@ L'indice de puissance est calculé à partir des éléments permanents du person
 
 Les effets temporaires, consommables et bonus d'événement ne doivent pas permettre d'obtenir artificiellement un rang.
 
-Première tranche envisagée : le rang E correspond au début de la progression et couvre approximativement les niveaux 1 à 20. Les niveaux minimums et indices de puissance requis pour les rangs D à Oméga restent à équilibrer.
+Le rang E commence donc uniquement après l'éveil au QG, jamais pendant les niveaux d'Aventurier non classé. Les niveaux minimums et indices de puissance requis pour les promotions D à Oméga restent à équilibrer.
 
 Une fois obtenu, un rang devrait rester acquis même si le joueur retire temporairement son équipement. L'indice actuel peut diminuer, mais la promotion validée n'est pas annulée.
 
@@ -152,6 +165,7 @@ Le rang accélère l'XP obtenue en entraînant Corps-à-corps, Distance, Magie e
 
 | Rang | Multiplicateur d'XP d'entraînement |
 | --- | ---: |
+| Sans rang | ×1 |
 | E | ×1 |
 | D | ×2 |
 | C | ×3 |
@@ -172,6 +186,8 @@ L'XP nécessaire pour améliorer une maîtrise augmente fortement avec son nivea
 
 Chaque équipement possède un rang minimal d'utilisation. Un joueur peut obtenir un objet de rang supérieur dans une faille dangereuse, mais il ne peut pas l'équiper avant d'avoir atteint le rang demandé.
 
+Les objets d'apprentissage explicitement marqués **sans rang** peuvent être utilisés par l'Aventurier avant son éveil. Un équipement de rang E exige que l'éveil au QG soit terminé, même si le joueur a déjà atteint le niveau 10.
+
 Exemples :
 
 - équipement D utilisable à partir du rang D ;
@@ -182,11 +198,18 @@ Un objet de haut rang obtenu en avance devient ainsi un objectif visible pour le
 
 Important : les bonus directs accordés par le rang ne doivent pas être inclus dans l'indice utilisé pour obtenir le rang suivant. Autrement, une promotion pourrait augmenter automatiquement l'indice et déclencher une chaîne de promotions sans nouvelle progression réelle. En revanche, les statistiques réellement gagnées ensuite et les nouveaux équipements équipés comptent normalement dans l'indice.
 
-### Équipement autoritaire de la première tranche
+### Inventaire et équipement autoritaires de la première tranche
 
-Le personnage possède quatre emplacements réels : **Coiffe, Arme, Armure et Bottes**. Le panneau d'équipement montre le personnage au centre et place chaque emplacement à proximité de la partie du corps correspondante. L'objet porté apparaît également sur le mannequin sous forme d'icône afin que le changement soit immédiatement visible.
+L'inventaire et l'équipement partagent désormais **une seule fenêtre**, sans onglet interne séparant les deux vues :
 
-La première tenue de test comprend une coiffe, une dague, une tunique et des bottes d'aventurier. Les monstres peuvent ensuite donner des objets plus puissants, par exemple la Coiffe du Sanglier ou la Lame-croc de faille.
+- à gauche, un mannequin du personnage entouré de six emplacements placés près de la partie du corps correspondante : **Coiffe, Armure, Pantalon, Bottes, Anneau et Arme/Corps-à-corps** ;
+- à droite, la grille du sac avec quatre filtres immédiatement accessibles : **Tout, Équipements, Ressources et Consommables** ;
+- toucher un objet sélectionne celui-ci et ouvre une fiche compacte indiquant au minimum son nom, son type, sa quantité, sa description, ses bonus ou effets, son rang requis et l'action disponible, par exemple Équiper, Retirer ou Utiliser ;
+- l'objet porté apparaît sur le slot correspondant autour du mannequin afin que le changement soit immédiatement visible.
+
+Le mannequin et la grille doivent tenir côte à côte dans l'écran paysage. Les emplacements vides restent visibles et identifiables. La fenêtre ne doit pas obliger le joueur à ouvrir une page d'équipement distincte.
+
+La première tenue de test remplit les six emplacements avec une coiffe, une dague, une tunique, un pantalon, des bottes d'aventurier et un anneau de cuivre. Les monstres peuvent ensuite donner des objets plus puissants, par exemple la Coiffe du Sanglier ou la Lame-croc de faille.
 
 L'inventaire et l'équipement appartiennent au joueur autoritaire de la zone :
 
@@ -214,10 +237,10 @@ Les récompenses nécessitent une participation réelle afin d'éviter qu'un jou
 ## 3. Début du jeu
 
 - Le personnage commence au niveau général 1.
-- Il est Aventurier de rang E.
+- Il est **Aventurier sans rang** et le reste tant qu'il n'a pas atteint le niveau 10 puis accompli son éveil au QG.
 - Il combat initialement au corps-à-corps avec son attaque principale, sans compétence active.
 - Il progresse dans les premières zones, entraîne ses statistiques et apprend le fonctionnement du jeu.
-- Lorsqu'il remplit les conditions de niveau et de puissance du rang D, il choisit définitivement sa voie de combat.
+- Au niveau 10, il peut parler au PNJ du QG et choisir définitivement sa voie : Épéiste, Archer ou Magicien. Ce choix lui attribue sa première classe et son rang E ; il n'est jamais appliqué automatiquement au passage de niveau.
 
 ## 4. Éléments — décision actuelle
 
@@ -227,20 +250,20 @@ Les identités des classes reposeront d'abord sur leurs armes, leurs rôles, leu
 
 ## 5. Classes évolutives liées aux rangs
 
-Le système de SP et le niveau distinct de Perfectionnement sont abandonnés. La classe évolue directement lorsque le joueur obtient un nouveau rang.
+Le système de SP et le niveau distinct de Perfectionnement sont abandonnés. L'Aventurier n'est pas une classe de rang E : il constitue la phase d'apprentissage **sans rang**. La première classe est choisie pendant l'éveil au QG à partir du niveau 10.
 
-| Rang | Corps-à-corps | Distance | Magie |
+| Étape validée | Corps-à-corps | Distance | Magie |
 | --- | --- | --- | --- |
-| E | Aventurier | Aventurier | Aventurier |
-| D | Épéiste | Archer | Magicien |
-| C | Chevalier | Rôdeur | Sorcier |
-| B | Champion | Tireur d'élite | Arcaniste |
-| A | Maître-lame | Maître-archer | Archimage |
-| S | Souverain des Lames | Souverain de l'Arc | Souverain des Arcanes |
+| Avant l'éveil, sans rang | Aventurier | Aventurier | Aventurier |
+| Éveil au QG, premier rang E | Épéiste | Archer | Magicien |
+| Évolutions intermédiaires | Chevalier, Champion, Maître-lame… | Rôdeur, Tireur d'élite, Maître-archer… | Sorcier, Arcaniste, Archimage… |
+| Rang S | Souverain des Lames | Souverain de l'Arc | Souverain des Arcanes |
 
-### Choix permanent au rang D
+L'association exacte de chaque évolution intermédiaire aux rangs D, C, B et A devra être repositionnée sans modifier l'ordre de progression déjà retenu. Aucune classe intermédiaire supplémentaire ne doit être inventée sans nouvelle validation.
 
-Lorsque l'Aventurier devient admissible au rang D, il choisit définitivement Corps-à-corps, Distance ou Magie. Il devient alors Épéiste, Archer ou Magicien.
+### Éveil au QG et choix permanent
+
+À partir du niveau général 10, l'Aventurier peut accomplir son éveil au QG. Il choisit définitivement Corps-à-corps, Distance ou Magie, devient Épéiste, Archer ou Magicien et obtient le rang E.
 
 Au moment du choix :
 
@@ -254,7 +277,7 @@ L'interface doit présenter clairement les trois styles et demander une confirma
 
 ### Évolutions suivantes
 
-À partir du rang C, la voie suit une chaîne linéaire : aucun nouveau choix de branche n'est demandé. Chaque promotion fait automatiquement évoluer la classe vers sa forme supérieure.
+Après l'éveil et le rang E, la voie suit une chaîne linéaire : aucun nouveau choix de branche n'est demandé. Chaque promotion concernée fait automatiquement évoluer la classe vers sa forme supérieure.
 
 Chaque évolution apporte :
 
@@ -298,31 +321,34 @@ Tous les monstres ne sont pas agressifs. Le comportement dépend de leur type :
 - défensif : riposte lorsqu'il est attaqué ;
 - agressif : détecte et poursuit le joueur dans une zone définie.
 
+Les **Slimes sont des monstres neutres/défensifs** : ils ne commencent pas le combat, mais dès qu'un joueur leur inflige une attaque valide, ils ciblent cet attaquant, le poursuivent si nécessaire et ripostent jusqu'à la fin ou l'abandon normal du combat. Ils ne doivent donc jamais rester immobiles sans répondre après avoir été frappés.
+
 Lorsqu'ils ne combattent pas, les monstres patrouillent périodiquement dans un petit rayon autour de leur point d'apparition. Une poursuite interrompue les fait revenir vers cette zone avant de reprendre leur patrouille.
 
 Les distances de détection, de poursuite, d'abandon et d'attaque devront être configurables par type de monstre.
 
 ### Compétences
 
-- L'Aventurier de rang E ne possède aucune compétence active.
+- L'Aventurier sans rang ne possède aucune compétence active.
 - Il combat seulement avec son attaque principale de Corps-à-corps.
-- Les compétences sont débloquées lors du passage au rang D et du choix entre Épéiste, Archer et Magicien.
+- Les premières compétences sont débloquées lors de l'éveil au QG, à partir du niveau 10, et du choix entre Épéiste, Archer et Magicien.
 - Le joueur peut équiper au maximum quatre compétences.
 - Les quatre emplacements sont placés en bas et au centre de l'écran.
 - La barre doit rester compacte afin de préserver la visibilité du monde sur mobile.
 
 ### Orientation et interface
 
-- Le jeu doit fonctionner en portrait et en paysage.
-- L'expérience principale et l'interface sont optimisées en priorité pour le paysage.
+- Le jeu se joue **uniquement en paysage** à compter de cette décision.
+- En portrait, un écran simple demande au joueur de tourner son téléphone ; les commandes de jeu et les panneaux ne doivent pas être utilisables tant que l'appareil n'est pas revenu en paysage.
+- Le passage portrait-paysage doit restaurer immédiatement un canvas à la taille exacte du nouvel écran, sans étirement ni conservation d'une mauvaise taille.
 - L'interface doit utiliser le moins d'espace permanent possible.
-- Inventaire, équipement, statistiques et autres panneaux sont regroupés dans un menu compact.
-- Toucher le bouton du menu déroule les catégories disponibles ; le joueur choisit ensuite le panneau à ouvrir.
+- Le menu compact propose des entrées distinctes. **Inventaire** ouvre la fenêtre combinée Inventaire + Équipement ; **Statistiques** ouvre uniquement les statistiques.
+- Une fenêtre ne contient pas les onglets permettant de basculer vers l'autre : le joueur ferme la fenêtre actuelle puis choisit lui-même une autre entrée du menu.
 - Les panneaux secondaires doivent pouvoir se refermer rapidement et ne pas masquer inutilement le combat.
-- Le panneau d'équipement utilise un mannequin central et quatre slots spatiaux clairement identifiés.
-- Les statistiques montrent pour chaque valeur le détail Base, Combat, Équipement et la progression d'entraînement.
+- La fenêtre Inventaire + Équipement place le mannequin et ses six slots à gauche, puis la grille filtrable et la fiche de l'objet sélectionné à droite.
+- La fenêtre Statistiques est une vue séparée, compacte et fixe. Les six statistiques — Corps-à-corps, Distance, Magie, Défense, Énergie et Vitesse — doivent toutes tenir simultanément dans la hauteur disponible en paysage, **sans aucun défilement**.
+- Les statistiques entraînables montrent de façon concise leur total, le détail Base, Combat et Équipement ainsi que leur progression d'entraînement. La Vitesse montre sa valeur, sa prochaine augmentation liée au niveau et le plafond 300.
 - Un butin ramassé automatiquement affiche pendant quelques secondes son icône, son nom et sa quantité juste au-dessus de la barre de compétences.
-- Une rotation portrait-paysage doit redimensionner le canvas à la taille exacte de l'écran sans étirer l'image ni conserver l'ancienne orientation.
 
 ### Monde et contenu initial
 
@@ -355,21 +381,21 @@ Les fonctions sociales complètes — compte permanent, pseudonyme réservé, ch
 
 ## 8. Première tranche jouable
 
-La première tranche a pour objectif de permettre, sur téléphone comme sur ordinateur :
+La première tranche a pour objectif de permettre, sur téléphone comme sur ordinateur en orientation paysage :
 
 1. d'ouvrir le jeu depuis l'URL Vercel ;
-2. d'arriver Aventurier E niveau 1 dans une petite ville ;
+2. d'arriver Aventurier sans rang niveau 1 dans une petite ville ;
 3. de se déplacer sur la grille en touchant le sol ;
 4. de quitter la ville pour une zone extérieure ;
 5. de rencontrer des monstres passifs, défensifs et agressifs ;
 6. de toucher un monstre afin de l'approcher automatiquement jusqu'à la portée correcte et de lancer l'attaque principale ;
 7. de gagner de l'XP générale et de l'XP d'entraînement séparées ;
 8. de recevoir du butin, de l'ajouter à l'inventaire et d'équiper les objets compatibles ;
-9. de consulter ses statistiques, son équipement et son inventaire dans le menu compact ;
+9. de consulter la fenêtre combinée Inventaire + Équipement et la fenêtre séparée Statistiques, toutes deux sans défilement structurel inutile ;
 10. d'affronter un boss et de repérer ou d'ouvrir une première faille ;
 11. de voir au minimum les déplacements des autres joueurs présents dans la même zone lorsque le serveur MMO est disponible.
 
-Dans cette tranche, les quatre emplacements de compétence sont visibles mais verrouillés pour l'Aventurier. Le passage au rang D et le choix de voie peuvent être introduits dès que la boucle de base est stable.
+Dans cette tranche, les quatre emplacements de compétence sont visibles mais verrouillés pour l'Aventurier. À partir du niveau 10, l'éveil au QG attribue le rang E et permet le choix permanent de voie.
 
 ## 9. Roadmap de développement
 
@@ -380,13 +406,14 @@ Dans cette tranche, les quatre emplacements de compétence sont visibles mais ve
 - ciblage, déplacement automatique à portée et attaque principale ;
 - comportements passif, défensif et agressif des monstres ;
 - PV, PM, niveau, XP, butin, inventaire, équipement et statistiques ;
-- interface mobile compacte, paysage prioritaire et portrait utilisable ;
+- interface mobile compacte exclusivement en paysage, avec invitation à tourner l'appareil en portrait ;
 - première synchronisation multijoueur et mode de test local ;
 - sauvegardes régulières du code sur GitHub et version testable sur Vercel.
 
-### Étape 2 — Progression de rang D
+### Étape 2 — Éveil au QG et progression classée
 
-- formule définitive de l'indice de puissance et seuils E/D ;
+- Aventurier sans rang jusqu'au niveau 10, PNJ du QG et séquence d'éveil ;
+- attribution du rang E uniquement après l'éveil, puis formule définitive de l'indice de puissance et seuil du rang D ;
 - présentation et confirmation du choix irréversible Épéiste, Archer ou Magicien ;
 - conversion de l'entraînement provisoire de l'Aventurier et attribution des 25 points ;
 - premières compétences actives, portée propre à chaque voie, mana et temps de recharge ;
@@ -413,7 +440,7 @@ Dans cette tranche, les quatre emplacements de compétence sont visibles mais ve
 
 Les fondations sont suffisamment définies pour construire et tester. Les sujets suivants restent volontairement ajustables :
 
-1. les formules exactes transformant les cinq statistiques en PV, PM, dégâts, réduction et indice de puissance ;
+1. les formules exactes transformant les six statistiques en PV, PM, dégâts, réduction, vitesse de déplacement et indice de puissance ;
 2. les courbes séparées d'XP générale et de chaque maîtrise entraînée ;
 3. les règles précises contre l'entraînement artificiel ou automatique abusif ;
 4. les niveaux minimums et indices de puissance correspondant aux rangs D à Oméga ;
@@ -421,13 +448,13 @@ Les fondations sont suffisamment définies pour construire et tester. Les sujets
 6. les compétences et bonus passifs détaillés de chaque classe, du rang D au rang S ;
 7. l'épreuve narrative permettant de choisir sa première voie ;
 8. les détails des Ascensions SS, SSS et Oméga ;
-9. le rythme exact des trente premières minutes et l'équilibrage des commandes en portrait.
+9. le rythme exact des trente premières minutes et l'équilibrage de l'interface paysage sur les différents formats de téléphone.
 
 ## 11. État du projet
 
 - Phase actuelle : première tranche jouable en cours d'implémentation.
-- État du 14 juillet 2026 : interface équipement/statistiques refondue, butin lisible, mort et réapparition jouables, monstres en patrouille, équipement autoritaire actif et rotation mobile corrigée.
-- Les fondations validées sont le déplacement tactile sur cases, le combat automatique à portée, les cinq statistiques, les rangs liés à la puissance et au niveau minimum, les trois voies permanentes, l'interface mobile compacte et l'intégration MMO progressive.
+- État du 14 juillet 2026 : nouvelle refonte demandée pour séparer la fenêtre Statistiques de la fenêtre combinée Inventaire + Équipement, imposer le paysage, rendre les Slimes défensifs et introduire l'éveil au QG au niveau 10 avant tout rang.
+- Les fondations validées sont le déplacement tactile sur cases, le combat automatique à portée, les six statistiques dont la Vitesse, l'Aventurier sans rang avant son éveil, les rangs liés à la puissance et au niveau minimum après l'éveil, les trois voies permanentes, l'interface mobile compacte en paysage et l'intégration MMO progressive.
 - Les valeurs d'équilibrage provisoires peuvent être modifiées après les essais sans changer ces fondations.
 - Chaque version stable doit être enregistrée sur GitHub et rendue testable sur Vercel afin que le projet reste accessible depuis mobile.
 - Ce document reste la référence centrale et doit être actualisé après chaque décision majeure.

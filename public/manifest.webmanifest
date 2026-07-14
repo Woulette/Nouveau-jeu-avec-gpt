@@ -3,7 +3,7 @@
   "short_name": "Nouveau MMO",
   "start_url": "/",
   "display": "fullscreen",
-  "orientation": "any",
+  "orientation": "landscape",
   "background_color": "#11151c",
   "theme_color": "#11151c",
   "icons": []

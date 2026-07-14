@@ -9,7 +9,7 @@ export type Direction = "north" | "south" | "east" | "west";
 export type PlayerRank = "E" | "D" | "C" | "B" | "A" | "S" | "SS" | "SSS" | "OMEGA";
 export type CombatPath = "adventurer" | "melee" | "ranged" | "magic";
 export type MonsterBehaviour = "passive" | "defensive" | "aggressive";
-export type EquipmentSlot = "head" | "weapon" | "armor" | "boots";
+export type EquipmentSlot = "head" | "weapon" | "armor" | "legs" | "boots" | "ring";
 
 export interface InventoryEntrySnapshot {
   itemId: string;
@@ -59,10 +59,15 @@ export interface PlayerSnapshot {
   level: number;
   xp: number;
   xpToNext: number;
-  rank: PlayerRank;
+  /** Null until the level-10 awakening is deliberately completed at headquarters. */
+  rank: PlayerRank | null;
+  awakened: boolean;
+  awakeningEligible: boolean;
   combatPath: CombatPath;
   className: string;
   power: number;
+  /** Display stat. Movement timing will be connected to it in a later balance pass. */
+  speed: number;
   masteries: PlayerMasteries;
   inventory: InventoryEntrySnapshot[];
   equipment: EquipmentSnapshot;

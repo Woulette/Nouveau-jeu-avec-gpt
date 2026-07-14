@@ -33,7 +33,7 @@ export const clientMessageSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("unequip"),
-    slot: z.enum(["head", "weapon", "armor", "boots"]),
+    slot: z.enum(["head", "weapon", "armor", "legs", "boots", "ring"]),
     ...sequenced,
   }),
   z.object({

@@ -103,17 +103,21 @@ describe("authoritative realm acceptance", () => {
     expect(player.level).toBe(2);
     expect(player.xp).toBe(4);
     expect(player.masteries.melee.level).toBe(1);
-    // The mastery level gained during the third hunt raises damage, so the
-    // final slime takes one fewer hit. Its remaining mastery XP is preserved
-    // even though the same kill also advanced the general level.
-    expect(player.masteries.melee.xp).toBe(35);
+    // Rankless damage has no hidden +5% bonus. The XP earned from the resulting
+    // extra combat action is still preserved when the general level advances.
+    expect(player.masteries.melee.xp).toBe(40);
     expect(player.masteries.ranged).toMatchObject({ level: 0, xp: 0 });
     expect(player.masteries.magic).toMatchObject({ level: 0, xp: 0 });
   });
 
-  it("rejects active skills for the rank-E Adventurer", () => {
+  it("keeps the adventurer rankless and rejects skills before the QG awakening", () => {
     const realm = new InMemoryRealm({ autoStart: false });
     const peer = joinPeer(realm, "peer-1", "Aube");
+    const player = realm.snapshot().players[0];
+
+    expect(player.rank).toBeNull();
+    expect(player.awakened).toBe(false);
+    expect(player.awakeningEligible).toBe(false);
     realm.handleMessage("peer-1", { type: "cast", slot: 0, sequence: 0 });
 
     expect(

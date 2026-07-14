@@ -2,13 +2,16 @@ import {
   combatStatForPath,
   damageAfterDefense,
   generalXpToNext,
+  isAwakeningEligible,
   isValidTrainingTarget,
   masteryXpToNext,
   outgoingPlayerDamage,
   playerMaxHp,
   playerMaxMp,
+  playerMoveIntervalMs,
+  playerSpeed,
   powerIndex,
-  RANK_BONUS,
+  rankBonus,
   trainingXpForAction,
 } from "../shared/formulas";
 import {
@@ -52,7 +55,6 @@ export const REALM_TICK_RATE = 10;
 export const REALM_SNAPSHOT_RATE = 5;
 const TICK_INTERVAL_MS = 1_000 / REALM_TICK_RATE;
 const SNAPSHOT_EVERY_TICKS = REALM_TICK_RATE / REALM_SNAPSHOT_RATE;
-const PLAYER_MOVE_INTERVAL_MS = 200;
 const PLAYER_ATTACK_INTERVAL_MS = 900;
 const REPATH_INTERVAL_MS = 250;
 const DISCONNECTED_PLAYER_TTL_MS = 30_000;
@@ -86,7 +88,7 @@ interface RuntimePlayer {
   mp: number;
   level: number;
   xp: number;
-  rank: PlayerRank;
+  rank: PlayerRank | null;
   combatPath: CombatPath;
   className: string;
   masteries: Record<MasteryKey, RuntimeMastery>;
@@ -251,7 +253,7 @@ export class InMemoryRealm {
       this.sendError(
         peerId,
         "SKILL_LOCKED",
-        "L'Aventurier débloque ses compétences au rang D.",
+        "L’Aventurier débloque ses compétences après son éveil au QG.",
         message.sequence,
       );
     }
@@ -302,11 +304,13 @@ export class InMemoryRealm {
       nextAttackAt: 0,
       nextRepathAt: 0,
       alive: true,
-      hp: playerMaxHp(1, "E"),
+      hp: playerMaxHp(1, null),
       mp: playerMaxMp(1),
       level: 1,
       xp: 0,
-      rank: "E",
+      // Reaching level 10 only unlocks the future headquarters interaction.
+      // A rank and combat path must never be assigned automatically.
+      rank: null,
       combatPath: "adventurer",
       className: "Aventurier",
       masteries: {
@@ -318,7 +322,14 @@ export class InMemoryRealm {
       inventory: Object.fromEntries(
         Object.entries(STARTER_INVENTORY).filter(([, quantity]) => quantity > 0),
       ),
-      equipment: { head: null, weapon: null, armor: null, boots: null },
+      equipment: {
+        head: null,
+        weapon: null,
+        armor: null,
+        legs: null,
+        boots: null,
+        ring: null,
+      },
       lastSequence: -1,
     };
     return player;
@@ -379,11 +390,11 @@ export class InMemoryRealm {
       this.sendPlayerError(player, "ITEM_NOT_EQUIPPABLE", "Cet objet ne peut pas être équipé.", sequence);
       return;
     }
-    if (!meetsItemRank(player.rank, definition.requiredRank)) {
+    if (definition.requiredRank && !meetsItemRank(player.rank, definition.requiredRank)) {
       this.sendPlayerError(
         player,
         "RANK_REQUIRED",
-        `Le rang ${definition.requiredRank} est requis pour équiper cet objet.`,
+        `Le rang ${definition.requiredRank} est nécessaire pour équiper cet objet.`,
         sequence,
       );
       return;
@@ -462,18 +473,32 @@ export class InMemoryRealm {
 
   private advancePlayer(player: RuntimePlayer, now: number): void {
     if (player.path.length === 0 || now < player.nextMoveAt) return;
-    const next = player.path[0];
-    const occupied = this.occupiedPositions(new Set([player.id]));
-    if (!isWalkable(STARTER_MAP, next, occupied)) {
-      player.path = [];
-      player.nextRepathAt = 0;
-      return;
+    const interval = playerMoveIntervalMs(player.level);
+
+    // A stale timestamp after an idle period must not grant a burst of catch-up moves.
+    if (player.nextMoveAt <= 0 || now - player.nextMoveAt > interval * 2) {
+      player.nextMoveAt = now;
     }
 
-    player.direction = directionBetween(player.position, next);
-    player.position = clonePosition(next);
-    player.path.shift();
-    player.nextMoveAt = now + PLAYER_MOVE_INTERVAL_MS;
+    // At high Speed, two tiles can legitimately become due during one 100 ms server tick.
+    // Anchoring the schedule to its previous deadline also preserves small gains such as
+    // 100 -> 101 instead of losing them to tick rounding.
+    let steps = 0;
+    while (player.path.length > 0 && now >= player.nextMoveAt && steps < 2) {
+      const next = player.path[0];
+      const occupied = this.occupiedPositions(new Set([player.id]));
+      if (!isWalkable(STARTER_MAP, next, occupied)) {
+        player.path = [];
+        player.nextRepathAt = 0;
+        return;
+      }
+
+      player.direction = directionBetween(player.position, next);
+      player.position = clonePosition(next);
+      player.path.shift();
+      player.nextMoveAt += interval;
+      steps += 1;
+    }
   }
 
   private playerAttack(player: RuntimePlayer, target: RuntimeMonster, now: number): void {
@@ -683,7 +708,7 @@ export class InMemoryRealm {
 
   private monsterAttack(monster: RuntimeMonster, player: RuntimePlayer, now: number): void {
     monster.nextAttackAt = now + monster.definition.attackIntervalMs;
-    const effectiveDefense = this.playerDefenseStat(player) * (1 + RANK_BONUS[player.rank]);
+    const effectiveDefense = this.playerDefenseStat(player) * (1 + rankBonus(player.rank));
     const damage = damageAfterDefense(monster.definition.attackDamage, effectiveDefense);
     player.hp = Math.max(0, player.hp - damage);
     this.broadcastEvent({
@@ -942,6 +967,8 @@ export class InMemoryRealm {
       xp: player.xp,
       xpToNext: generalXpToNext(player.level),
       rank: player.rank,
+      awakened: player.rank !== null,
+      awakeningEligible: isAwakeningEligible(player.level, player.rank),
       combatPath: player.combatPath,
       className: player.className,
       power: powerIndex({
@@ -950,6 +977,7 @@ export class InMemoryRealm {
         defense,
         energy,
       }),
+      speed: playerSpeed(player.level),
       masteries: {
         melee: {
           level: player.masteries.melee.level,
