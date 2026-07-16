@@ -55,6 +55,7 @@ import {
   adventurerTextureKey,
   creatureTextureKey,
   portalTextureKey,
+  type AdventurerAction,
   type CardinalDirection,
   type CreatureKind,
 } from "./visualTypes";
@@ -372,6 +373,26 @@ export class WorldScene extends Phaser.Scene {
       frameRate: ADVENTURER_LEFT_WALK_ASSET.frameRate,
       repeat: -1,
     });
+  }
+
+  private playAdventurerAnimation(
+    sprite: Phaser.GameObjects.Sprite,
+    direction: CardinalDirection,
+    action: AdventurerAction,
+    ignoreIfPlaying = false,
+  ) {
+    const handcraftedSideWalk =
+      action === "walk" &&
+      (direction === "left" || direction === "right") &&
+      this.textures.exists(ADVENTURER_LEFT_WALK_ASSET.key);
+
+    sprite.setFlipX(handcraftedSideWalk && direction === "right");
+    sprite.play(
+      handcraftedSideWalk
+        ? VISUAL_ANIMATIONS.adventurer("left", "walk")
+        : VISUAL_ANIMATIONS.adventurer(direction, action),
+      ignoreIfPlaying,
+    );
   }
 
   private createWorld() {
@@ -1069,11 +1090,10 @@ export class WorldScene extends Phaser.Scene {
     if ((this.attackingUntil.get(player.id) ?? 0) <= this.time.now) {
       const visuallyMoving =
         player.moving || positionChanged || this.tweens.isTweening(view.container);
-      view.sprite.play(
-        VISUAL_ANIMATIONS.adventurer(
-          visualDirection(player.direction),
-          visuallyMoving ? "walk" : "idle",
-        ),
+      this.playAdventurerAnimation(
+        view.sprite,
+        visualDirection(player.direction),
+        visuallyMoving ? "walk" : "idle",
         true,
       );
     }
@@ -1360,7 +1380,12 @@ export class WorldScene extends Phaser.Scene {
     if (source && this.playerViews.has(sourceId)) {
       const player = this.latestPlayers.get(sourceId);
       if (player) {
-        source.sprite.play(VISUAL_ANIMATIONS.adventurer(visualDirection(player.direction), "attack"), true);
+        this.playAdventurerAnimation(
+          source.sprite,
+          visualDirection(player.direction),
+          "attack",
+          true,
+        );
       }
     } else if (source) {
       this.tweens.add({ targets: source.sprite, scaleX: 1.12, scaleY: 0.92, yoyo: true, duration: 105 });

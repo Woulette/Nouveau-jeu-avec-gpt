@@ -28,9 +28,9 @@ Ne jamais modifier VoidSector ni un autre jeu. Ce dépôt et cette URL sont les 
 
 - `public/assets/characters/adventurier-marche-gauche.png` est la spritesheet validée pour la marche vers la gauche de l'Aventurier.
 - Format strict : 192 × 64 px, soit quatre images transparentes de 48 × 64 px, ordre de lecture gauche vers droite.
-- Phaser la précharge comme spritesheet et remplace uniquement `anim-adventurer-left-walk`, à 8 images/s en boucle.
+- Phaser la précharge comme spritesheet et remplace `anim-adventurer-left-walk`, à 8 images/s en boucle. La marche droite réutilise cette même animation avec un miroir horizontal appliqué au sprite, sans générer une copie moins cohérente.
 - L'origine reste bas-centre. Le déplacement sur cases, le tween de 220 ms et les collisions autoritaires ne changent pas.
-- L'arrêt, l'attaque et les directions haut, bas et droite restent procéduraux pour permettre une comparaison ciblée avant de produire la suite.
+- L'arrêt, l'attaque et les directions haut et bas restent procéduraux pour permettre une comparaison ciblée avant de produire la suite.
 - Le service worker `v4` précharge aussi ce PNG afin que le test reste disponible hors ligne après la première visite complète.
 
 ## Fonctionnalités implémentées dans la dernière passe
@@ -104,7 +104,7 @@ Ne jamais modifier VoidSector ni un autre jeu. Ce dépôt et cette URL sont les 
 ## Validation à préserver
 
 - Dernière validation complète : TypeScript, ESLint, build de production et **111 tests sur 111** réussis.
-- La marche gauche a été vérifiée dans un vrai navigateur headless en paysage 874 × 402 : PNG servi en HTTP 200, plusieurs images successives visibles, canvas Phaser présent, aucune erreur console/page, aucune requête échouée et aucun overlay Next.js.
+- La marche latérale a été vérifiée à gauche puis à droite dans un vrai navigateur headless en paysage 874 × 402 : plusieurs images successives visibles, miroir droit correct, retour à l'arrêt sans miroir résiduel, canvas Phaser présent, aucune erreur console/page, aucune requête échouée et aucun overlay Next.js.
 - Parcours navigateur final validé : clic Maître du QG niveau 10, sélection Archer, rang E et 25 points Distance persistants, puis affichage simultané des six marqueurs E à S.
 - Exécuter avant publication : `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`.
 - Refaire le parcours navigateur sur au moins 874×402 iPhone simulé, 740×360 Android et 1280×720 desktop.
