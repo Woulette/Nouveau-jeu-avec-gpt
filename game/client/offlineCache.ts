@@ -18,13 +18,18 @@ function publishOfflineCacheState(state: OfflineCacheState, message?: string): v
   );
 }
 
-/** Keep only immutable Next assets. API calls and cross-origin resources are never pre-cached. */
+/** Keep immutable Next chunks and local game assets. API and foreign requests are excluded. */
 export function selectOfflineAssetUrls(resourceUrls: string[], origin: string): string[] {
   const selected = new Set<string>();
   for (const resourceUrl of resourceUrls) {
     try {
       const url = new URL(resourceUrl, origin);
-      if (url.origin !== origin || !url.pathname.startsWith("/_next/static/")) continue;
+      if (
+        url.origin !== origin ||
+        (!url.pathname.startsWith("/_next/static/") && !url.pathname.startsWith("/assets/"))
+      ) {
+        continue;
+      }
       selected.add(url.pathname + url.search);
     } catch {
       // Resource Timing can contain browser-specific, non-URL entries; ignore them.

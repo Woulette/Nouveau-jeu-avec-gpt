@@ -1,6 +1,6 @@
 # Relais pour le prochain chat — Nouveau MMO RPG
 
-Dernière mise à jour : 14 juillet 2026.
+Dernière mise à jour : 16 juillet 2026.
 
 ## Projet à continuer
 
@@ -23,6 +23,15 @@ Ne jamais modifier VoidSector ni un autre jeu. Ce dépôt et cette URL sont les 
 - Inventaire + équipement restent dans une seule fenêtre ; Statistiques et Carte des failles sont séparées.
 - Les six statistiques tiennent sur une page sans scroll, en lignes verticales Base / Combat / Équipement / Total.
 - Les assets définitifs sont traités séparément. Les variantes procédurales actuelles servent à rendre le nouveau contenu testable.
+
+## Premier asset définitif en test
+
+- `public/assets/characters/adventurier-marche-gauche.png` est la spritesheet validée pour la marche vers la gauche de l'Aventurier.
+- Format strict : 192 × 64 px, soit quatre images transparentes de 48 × 64 px, ordre de lecture gauche vers droite.
+- Phaser la précharge comme spritesheet et remplace uniquement `anim-adventurer-left-walk`, à 8 images/s en boucle.
+- L'origine reste bas-centre. Le déplacement sur cases, le tween de 220 ms et les collisions autoritaires ne changent pas.
+- L'arrêt, l'attaque et les directions haut, bas et droite restent procéduraux pour permettre une comparaison ciblée avant de produire la suite.
+- Le service worker `v4` précharge aussi ce PNG afin que le test reste disponible hors ligne après la première visite complète.
 
 ## Fonctionnalités implémentées dans la dernière passe
 
@@ -94,7 +103,8 @@ Ne jamais modifier VoidSector ni un autre jeu. Ce dépôt et cette URL sont les 
 
 ## Validation à préserver
 
-- Dernière validation complète : TypeScript, ESLint, build de production et **110 tests sur 110** réussis.
+- Dernière validation complète : TypeScript, ESLint, build de production et **111 tests sur 111** réussis.
+- La marche gauche a été vérifiée dans un vrai navigateur headless en paysage 874 × 402 : PNG servi en HTTP 200, plusieurs images successives visibles, canvas Phaser présent, aucune erreur console/page, aucune requête échouée et aucun overlay Next.js.
 - Parcours navigateur final validé : clic Maître du QG niveau 10, sélection Archer, rang E et 25 points Distance persistants, puis affichage simultané des six marqueurs E à S.
 - Exécuter avant publication : `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`.
 - Refaire le parcours navigateur sur au moins 874×402 iPhone simulé, 740×360 Android et 1280×720 desktop.

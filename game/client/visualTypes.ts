@@ -3,6 +3,14 @@
 export const TILE_SIZE = 32;
 export const ADVENTURER_FRAME = { width: 48, height: 64 } as const;
 
+/** First handcrafted character sheet being tested in the live game. */
+export const ADVENTURER_LEFT_WALK_ASSET = {
+  key: "adventurer-left-walk-handcrafted",
+  path: "/assets/characters/adventurier-marche-gauche.png",
+  frameCount: 4,
+  frameRate: 8,
+} as const;
+
 export const CARDINAL_DIRECTIONS = ["down", "left", "right", "up"] as const;
 export type CardinalDirection = (typeof CARDINAL_DIRECTIONS)[number];
 

@@ -1,14 +1,20 @@
 /* Nouveau MMO RPG — application shell for offline play after the first online visit. */
 const CACHE_PREFIX = "nouveau-mmo-shell-";
-const CACHE_NAME = `${CACHE_PREFIX}v3`;
-const CORE_URLS = ["/", "/manifest.webmanifest"];
+const CACHE_NAME = `${CACHE_PREFIX}v4`;
+const CORE_URLS = [
+  "/",
+  "/manifest.webmanifest",
+  "/assets/characters/adventurier-marche-gauche.png",
+];
 
 function isCacheableUrl(value) {
   const url = new URL(value, self.location.origin);
   return (
     url.origin === self.location.origin &&
     !url.pathname.startsWith("/api/") &&
-    (CORE_URLS.includes(url.pathname) || url.pathname.startsWith("/_next/static/"))
+    (CORE_URLS.includes(url.pathname) ||
+      url.pathname.startsWith("/_next/static/") ||
+      url.pathname.startsWith("/assets/"))
   );
 }
 
@@ -33,7 +39,7 @@ async function warmAppShell() {
   const page = await cacheUrl(cache, "/");
   if (!page) throw new Error("La page du jeu n'a pas pu être préparée.");
   const html = await page.text();
-  const assetUrls = new Set(["/manifest.webmanifest"]);
+  const assetUrls = new Set(CORE_URLS.filter((url) => url !== "/"));
   for (const match of html.matchAll(/(?:src|href)=["']([^"']+)["']/g)) {
     const url = new URL(match[1], self.location.origin);
     if (url.origin === self.location.origin && url.pathname.startsWith("/_next/")) {

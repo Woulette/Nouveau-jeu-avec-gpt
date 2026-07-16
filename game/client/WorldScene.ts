@@ -48,6 +48,8 @@ import { createProceduralAssets } from "./AssetFactory";
 import { WorldSocket } from "./WorldSocket";
 import { loadPreferredConnectionMode, savePlayerSnapshot } from "./storage";
 import {
+  ADVENTURER_FRAME,
+  ADVENTURER_LEFT_WALK_ASSET,
   VISUAL_ANIMATIONS,
   VISUAL_KEYS,
   adventurerTextureKey,
@@ -273,8 +275,21 @@ export class WorldScene extends Phaser.Scene {
     this.callbacks = callbacks;
   }
 
+  preload() {
+    this.load.spritesheet(
+      ADVENTURER_LEFT_WALK_ASSET.key,
+      ADVENTURER_LEFT_WALK_ASSET.path,
+      {
+        frameWidth: ADVENTURER_FRAME.width,
+        frameHeight: ADVENTURER_FRAME.height,
+        endFrame: ADVENTURER_LEFT_WALK_ASSET.frameCount - 1,
+      },
+    );
+  }
+
   create() {
     createProceduralAssets(this);
+    this.registerHandcraftedAdventurerAnimations();
 
     this.worldLayer = this.captureWorldLayer(() => this.createWorld());
     this.riftLayer = this.captureWorldLayer(() => this.createRiftWorld()).setVisible(false);
@@ -341,6 +356,22 @@ export class WorldScene extends Phaser.Scene {
     this.time.delayedCall(650, () =>
       this.showToast("Touchez une case pour vous déplacer · touchez un monstre pour combattre"),
     );
+  }
+
+  private registerHandcraftedAdventurerAnimations() {
+    if (!this.textures.exists(ADVENTURER_LEFT_WALK_ASSET.key)) return;
+
+    const animationKey = VISUAL_ANIMATIONS.adventurer("left", "walk");
+    if (this.anims.exists(animationKey)) this.anims.remove(animationKey);
+    this.anims.create({
+      key: animationKey,
+      frames: this.anims.generateFrameNumbers(ADVENTURER_LEFT_WALK_ASSET.key, {
+        start: 0,
+        end: ADVENTURER_LEFT_WALK_ASSET.frameCount - 1,
+      }),
+      frameRate: ADVENTURER_LEFT_WALK_ASSET.frameRate,
+      repeat: -1,
+    });
   }
 
   private createWorld() {
